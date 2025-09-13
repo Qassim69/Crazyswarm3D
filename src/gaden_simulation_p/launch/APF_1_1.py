@@ -1,0 +1,143 @@
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
+import os
+import yaml
+
+def generate_launch_description():
+    # Paths to included launch files
+    gaden_simulation_p = get_package_share_directory('gaden_simulation_p')
+    test_env = get_package_share_directory('test_env')
+    gsl_hover_launch = os.path.join(gaden_simulation_p, 'launch', 'GSL_hover_swarm.py')
+    gaden_player_launch = os.path.join(test_env, 'launch', 'GSL_GADEN_player.py')
+
+    # Load YAML (correct path without brackets)
+    cfrobot_yaml = os.path.join(gaden_simulation_p, 'config', 'cfrobot.yaml')
+    with open(cfrobot_yaml, 'r') as f:
+        data = yaml.safe_load(f)
+        crazyflies_data = data['robots']
+
+    # Function to get flattened params for a given cfid
+    def get_agent_params(cfid):
+        key = f'cf{cfid}'
+        if key not in crazyflies_data:
+            raise ValueError(f"No entry for {key} in cfrobot.yaml")
+        drone = crazyflies_data[key].copy()
+        cf_type = str(drone.pop('type', 'default'))
+        x, y, z = drone.pop('initial_position', [0.0, 0.0, 0.0])
+        return {
+            'cfid': int(cfid),
+            'channel': int(drone.pop('channel', 0)),
+            'initial_x': float(x),
+            'initial_y': float(y),
+            'initial_z': float(z),
+            'cf_type': cf_type,
+        }
+
+    return LaunchDescription([
+        # Use simulation time parameter
+        DeclareLaunchArgument('use_sim_time', default_value='false'),
+
+        # Clock node
+        Node(
+            package='gaden_simulation_p',
+            executable='clock',
+            name='Clock',
+            parameters=[{'factor': 18.0}]
+        ),
+
+        # Include GSL Hover Swarm Launch
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(gsl_hover_launch),
+        ),
+
+        # Include GSL GADEN Player Launch
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(gaden_player_launch),
+        ),
+
+        # GSL environment node
+        Node(
+            package='gaden_simulation_p',
+            executable='APF_1_1_env',
+            name='GSLenvironment'
+        ),
+
+        # Agent nodes with flattened parameters
+        Node(
+            package='gaden_simulation_p',
+            executable='APF_1_1_agent',
+            name='cf1',
+            parameters=[get_agent_params(1)]
+        ),
+        Node(
+            package='gaden_simulation_p',
+            executable='APF_1_1_agent',
+            name='cf2',
+            parameters=[get_agent_params(2)]
+        ),
+        Node(
+            package='gaden_simulation_p',
+            executable='APF_1_1_agent',
+            name='cf3',
+            parameters=[get_agent_params(3)]
+        ),
+        Node(
+            package='gaden_simulation_p',
+            executable='APF_1_1_agent',
+            name='cf4',
+            parameters=[get_agent_params(4)]
+        ),
+
+        # Simulated gas sensor nodes with namespaces
+        Node(
+            package='simulated_gas_sensor',
+            executable='simulated_gas_sensor',
+            namespace='mox1',
+            name='mox1',
+            output='screen',
+            parameters=[
+                {'sensor_model': 0},
+                {'sensor_frame': 'cf1'},
+                {'fixed_frame': 'world'}
+            ]
+        ),
+        Node(
+            package='simulated_gas_sensor',
+            executable='simulated_gas_sensor',
+            namespace='mox2',
+            name='mox2',
+            output='screen',
+            parameters=[
+                {'sensor_model': 0},
+                {'sensor_frame': 'cf2'},
+                {'fixed_frame': 'world'}
+            ]
+        ),
+        Node(
+            package='simulated_gas_sensor',
+            executable='simulated_gas_sensor',
+            namespace='mox3',
+            name='mox3',
+            output='screen',
+            parameters=[
+                {'sensor_model': 0},
+                {'sensor_frame': 'cf3'},
+                {'fixed_frame': 'world'}
+            ]
+        ),
+        Node(
+            package='simulated_gas_sensor',
+            executable='simulated_gas_sensor',
+            namespace='mox4',
+            name='mox4',
+            output='screen',
+            parameters=[
+                {'sensor_model': 0},
+                {'sensor_frame': 'cf4'},
+                {'fixed_frame': 'world'}
+            ]
+        ),
+    ])

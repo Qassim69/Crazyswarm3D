@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>simulated_gas_sensor</name>
+  <version>1.0.0</version>
+  <description>Pkg for the simulation of the response of a gas sensor (MOX, EQ, PID, etc) to different gases.</description>
+  <maintainer email="jgmonroy@uma.es">Javier Monroy</maintainer>
+
+  <license>GPLv3</license>
+
+  
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+
+  
+  <build_depend>gaden_common</build_depend>
+  <build_depend>tf2</build_depend>
+  <build_depend>tf2_ros</build_depend>
+  <build_depend>tf2_geometry_msgs</build_depend>
+
+  <build_depend>olfaction_msgs</build_depend>
+  <exec_depend>olfaction_msgs</exec_depend>
+
+
+  <build_depend>gaden_player</build_depend>
+  <exec_depend>gaden_player</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from gaden_simulation_p.APF_1_1_env import main
+main()

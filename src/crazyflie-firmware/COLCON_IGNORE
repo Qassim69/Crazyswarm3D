@@ -1,0 +1,4 @@
+touch bindings/COLCON_IGNORE
+touch vendor/CMSIS/CMSIS/DSP/PythonWrapper/COLCON_IGNORE
+touch vendor/CMSIS/CMSIS/DSP/Source/COLCON_IGNORE
+touch build/COLCON_IGNORE

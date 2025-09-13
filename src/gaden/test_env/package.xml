@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>test_env</name>
+  <version>0.0.0</version>
+  <description>This pkg is created to organize the test environment files for the GADEN gas disperion simulator</description>
+  <maintainer email="jgmonroy@uma.es">Javier Monroy</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  
+  <!-- Core ROS build and runtime dependencies -->
+  <depend>launch</depend>  <!-- For launch file infrastructure -->
+  <depend>launch_ros</depend>  <!-- For ROS-specific launch actions like Node and IncludeLaunchDescription -->
+  <depend>ament_index_python</depend>  <!-- For functions like get_package_share_directory -->
+  <depend>tf2_ros</depend>  <!-- For static_transform_publisher in launch files -->
+  <depend>robot_state_publisher</depend>  <!-- For publishing robot descriptions -->
+  <depend>xacro</depend>  <!-- For processing xacro files in launch scripts -->
+  <depend>rclcpp</depend>  <!-- If any C++ nodes or components are involved; optional but safe -->
+  
+  <!-- GADEN-specific packages (build and exec, as they provide nodes and utilities) -->
+  <depend>gaden_common</depend>
+  <depend>gaden_environment</depend>
+  <depend>gaden_filament_simulator</depend>
+  <depend>gaden_msgs</depend>  <!-- If using GADEN's custom messages/topics -->
+  <depend>gaden_player</depend>
+  <depend>gaden_preprocessing</depend>
+  <depend>simulated_anemometer</depend>
+  <depend>simulated_gas_sensor</depend>
+  
+  <!-- Runtime-only dependencies (e.g., visualization and simulators) -->
+  <exec_depend>rviz2</exec_depend>  <!-- For RViz nodes launched conditionally -->
+  <exec_depend>basic_sim</exec_depend>  <!-- For BasicSim mode in launch files -->
+  <exec_depend>coppelia_ros2_pkg</exec_depend>  <!-- For CoppeliaSim mode in launch files -->
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

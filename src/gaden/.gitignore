@@ -1,0 +1,14 @@
+log
+.cache
+build
+.vscode
+.cache
+
+**/gas_simulations
+*_U
+*_V
+*_W
+
+*COLCON_IGNORE
+*__pycache__*
+utils/OccupancyGridToSTL/build

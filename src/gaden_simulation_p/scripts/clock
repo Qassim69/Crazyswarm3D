@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from gaden_simulation_p.clock import simtime_talker
+simtime_talker()

@@ -1,0 +1,28 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/qas/BAM/swarm_ws/install/olfaction_msgs/include/**",
+        "/home/qas/BAM/swarm_ws/install/gaden_msgs/include/**",
+        "/home/qas/BAM/swarm_ws/install/gaden_common/include/**",
+        "/home/qas/BAM/swarm_ws/install/crazyflie_interfaces/include/**",
+        "/opt/ros/humble/include/**",
+        "/home/qas/BAM/swarm_ws/src/gaden/gaden_common/include/**",
+        "/home/qas/BAM/swarm_ws/src/gaden/gaden_environment/include/**",
+        "/home/qas/BAM/swarm_ws/src/gaden/gaden_filament_simulator/include/**",
+        "/home/qas/BAM/swarm_ws/src/gaden/simulated_tdlas/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

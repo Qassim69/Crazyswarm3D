@@ -1,0 +1,106 @@
+robots:
+  cf1:
+    enabled: true
+    type: default
+    initial_position: [0.5, 0.5, 0.0]
+    
+  cf2:
+    enabled: true
+    type: default
+    initial_position: [0.5, 3.0, 0.0]
+    
+  cf3:
+    enabled: true 
+    type: default
+    initial_position: [0.5, 5.5, 0.0]
+    
+  cf4:
+    enabled: true
+    type: default
+    initial_position: [3.5, 0.5, 0.0]
+    
+robot_types:
+  default:
+    bigQuad: False
+    batteryVoltageWarning: 3.8  # V
+    batteryVoltageCritical: 3.7 # V
+    markerConfiguration: 0 # change to 3 for single marker tracking
+    dynamicsConfiguration: 0
+    firmware_params:
+      ctrlMel:
+        kp_xy: 0.4
+        kd_xy: 0.2
+        ki_xy: 0.05
+        i_range_xy: 2.0
+        kR_xy: 70000
+        kw_xy: 20000
+        kR_z: 60000
+        kw_z: 12000
+        ki_m_z: 500
+        i_range_m_z: 1500
+        kd_omega_rp: 200
+        kp_z: 1.25
+        kd_z: 0.4
+        ki_z: 0.05
+        i_range_z: 0.4
+        mass: 0.032
+        massThrust: 132000
+      commander:
+        enHighLevel: 1
+      stabilizer:
+        estimator: 2 # 1: complementary, 2: kalman
+        controller: mellinger #1: PID, 2: mellinger
+      ring:
+        effect: 7 # 6: double spinner, 7: solid color, 16: packetRate
+        solidBlue: 255 # if set to solid color
+        solidGreen: 0 # if set to solid color
+        solidRed: 0 # if set to solid color
+        headlightEnable: 0
+      locSrv:
+        extPosStdDev: 1e-3
+        extQuatStdDev: 0.5e-1
+      kalman:
+        resetEstimation: 1
+numMarkerConfigurations: 4
+markerConfigurations:
+  "0":  # for standard Crazyflie
+    numPoints: 4
+    offset: [0.0, -0.01, -0.04]
+    points:
+      "0": [0.0177184,0.0139654,0.0557585]
+      "1": [-0.0262914,0.0509139,0.0402475]
+      "2": [-0.0328889,-0.02757,0.0390601]
+      "3": [0.0431307,-0.0331216,0.0388839]
+  "1": # medium frame
+    numPoints: 4
+    offset: [0.0, 0.0, -0.03]
+    points:
+      "0": [-0.00896228,-0.000716753,0.0716129]
+      "1": [-0.0156318,0.0997402,0.0508162]
+      "2": [0.0461693,-0.0881012,0.0380672]
+      "3": [-0.0789959,-0.0269793,0.0461144]
+  "2": # big frame
+    numPoints: 4
+    offset: [0.0, 0.0, -0.06]
+    points:
+      "0": [0.0558163,-0.00196302,0.0945539]
+      "1": [-0.0113941,0.00945842,0.0984811]
+      "2": [-0.0306277,0.0514879,0.0520456]
+      "3": [0.0535816,-0.0400775,0.0432799]
+  "3":  # for standard Crazyflie with a single marker
+    numPoints: 1
+    offset: [0.0, -0.01, -0.04]
+    points:
+      "0": [0.0177184,0.0139654,0.0557585]
+numDynamicsConfigurations: 1
+dynamicsConfigurations:
+  "0":
+    maxXVelocity: 2.0
+    maxYVelocity: 2.0
+    maxZVelocity: 3.0
+    maxPitchRate: 20.0
+    maxRollRate: 20.0
+    maxYawRate: 10.0
+    maxRoll: 1.4
+    maxPitch: 1.4
+    maxFitnessScore: 0.001
