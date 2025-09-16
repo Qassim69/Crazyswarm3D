@@ -61,14 +61,14 @@ class NeuralSwarm:
         self.H = 20
         self.rho_L_net = rho_Net(hiddendim=self.H)
         self.phi_L_net = phi_Net(inputdim=6, hiddendim=self.H)  # x,y,z,vx,vy,vz
-        self.rho_L_net.load_state_dict(torch.load('{}/rho_L.pth'.format(model_folder)))
-        self.phi_L_net.load_state_dict(torch.load('{}/phi_L.pth'.format(model_folder)))
+        self.rho_L_net.load_state_dict(torch.load('{}/rho_L.pth'.format(model_folder), weights_only=True))
+        self.phi_L_net.load_state_dict(torch.load('{}/phi_L.pth'.format(model_folder), weights_only=True))
         self.rho_S_net = rho_Net(hiddendim=self.H)
         self.phi_S_net = phi_Net(inputdim=6, hiddendim=self.H)  # x,y,z,vx,vy,vz
-        self.rho_S_net.load_state_dict(torch.load('{}/rho_S.pth'.format(model_folder)))
-        self.phi_S_net.load_state_dict(torch.load('{}/phi_S.pth'.format(model_folder)))
+        self.rho_S_net.load_state_dict(torch.load('{}/rho_S.pth'.format(model_folder), weights_only=True))
+        self.phi_S_net.load_state_dict(torch.load('{}/phi_S.pth'.format(model_folder), weights_only=True))
         self.phi_G_net = phi_Net(inputdim=4, hiddendim=self.H)  # z,vx,vy,vz
-        self.phi_G_net.load_state_dict(torch.load('{}/phi_G.pth'.format(model_folder)))
+        self.phi_G_net.load_state_dict(torch.load('{}/phi_G.pth'.format(model_folder), weights_only=True))
 
     def compute_Fa(self, data_self, data_neighbors):
         rho_input = torch.zeros(self.H)

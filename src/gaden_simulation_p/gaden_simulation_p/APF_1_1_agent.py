@@ -24,7 +24,7 @@ from olfaction_msgs.msg import GasSensor
 
 from gaden_simulation_interfaces.srv import GetForces
 
-from crazyflie_py.crazyflie_py.crazyflie import Crazyflie
+from crazyflie_py.crazyflie import Crazyflie
 
 from rcl_interfaces.srv import ListParameters, DescribeParameters
 from rcl_interfaces.msg import ParameterType
@@ -373,8 +373,16 @@ def main(args=None):
     node = rclpy.create_node("crazyflie_distributed")
     
     cfid = node.declare_parameter("cfid", 0).value
-    crazyflies = node.declare_parameter("crazyflies", []).value
+    crazyflies_ids = node.declare_parameter("crazyflies_ids", []).value
+    crazyflies_positions = node.declare_parameter("crazyflies_positions", []).value
     
+    crazyflies = []
+    for i, id_val in enumerate(crazyflies_ids):
+        crazyflies.append({
+            "id": id_val,
+            "initialPosition": crazyflies_positions[i]
+        })
+        
     tf_buffer = Buffer()
     tf_listener = TransformListener(tf_buffer, node)
     

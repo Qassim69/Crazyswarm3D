@@ -17,38 +17,15 @@ from gaden_internal_py.utils import read_sim_yaml
 #===========================
 def launch_arguments():
     return [
-        DeclareLaunchArgument(
-            "scenario",
-            default_value=["10x6_empty_room"],
-            description="scenario to simulate",
-        ),
+        DeclareLaunchArgument("scenario", default_value="10x6_empty_room", description="scenario to simulate",),
         
-        DeclareLaunchArgument(
-            "use_rqt_plot",
-            default_value=["True"],
-            description="Launch rqt_plot with MOX topics",
-        ),
+        DeclareLaunchArgument("use_rqt_plot", default_value="True", description="Launch rqt_plot with MOX topics",),
 
-        DeclareLaunchArgument(
-            "use_rviz",
-            default_value=["True"],
-            description="",
-        ),
-    	DeclareLaunchArgument(
-            "source_x",
-            default_value=["1.5"],
-            description="X position of the gas source",
-        ),
-        DeclareLaunchArgument(
-            "source_y",
-            default_value=["3.00"],
-            description="Y position of the gas source",
-        ),
-        DeclareLaunchArgument(
-            "source_z",
-            default_value=["0.75"],
-            description="Z position of the gas source",
-        ),
+        DeclareLaunchArgument("use_rviz", default_value="True", description="",),
+        
+    	DeclareLaunchArgument("source_x", default_value="1.5", description="X position of the gas source",),
+    	DeclareLaunchArgument("source_y", default_value="3.00", description="Y position of the gas source",),
+    	DeclareLaunchArgument("source_z", default_value="0.75", description="Z position of the gas source",),
     ]
 #==========================
 def launch_setup(context, *args, **kwargs):

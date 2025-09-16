@@ -1,5 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
+from launch.actions import GroupAction, RegisterEventHandler
+from launch.event_handlers import OnProcessStart
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -19,6 +21,13 @@ def generate_launch_description():
         data = yaml.safe_load(f)
         crazyflies_data = data['robots']
 
+    crazyflies_ids = []
+    crazyflies_positions = []
+    for key in sorted(crazyflies_data.keys()):  # Sort keys to maintain consistent order (e.g., cf1, cf2, etc.)
+        cfid = int(key[2:])  # Extract ID from 'cf1' -> 1, etc.
+        crazyflies_ids.append(cfid)
+        crazyflies_positions.append(crazyflies_data[key]['initial_position'])
+
     # Function to get flattened params for a given cfid
     def get_agent_params(cfid):
         key = f'cf{cfid}'
@@ -35,63 +44,16 @@ def generate_launch_description():
             'initial_z': float(z),
             'cf_type': cf_type,
         }
-
-    return LaunchDescription([
-        # Use simulation time parameter
-        DeclareLaunchArgument('use_sim_time', default_value='false'),
-
-        # Clock node
-        Node(
-            package='gaden_simulation_p',
-            executable='clock',
-            name='Clock',
-            parameters=[{'factor': 18.0}]
-        ),
-
-        # Include GSL Hover Swarm Launch
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(gsl_hover_launch),
-        ),
-
-        # Include GSL GADEN Player Launch
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(gaden_player_launch),
-        ),
-
-        # GSL environment node
-        Node(
-            package='gaden_simulation_p',
-            executable='APF_1_1_env',
-            name='GSLenvironment'
-        ),
-
-        # Agent nodes with flattened parameters
-        Node(
-            package='gaden_simulation_p',
-            executable='APF_1_1_agent',
-            name='cf1',
-            parameters=[get_agent_params(1)]
-        ),
-        Node(
-            package='gaden_simulation_p',
-            executable='APF_1_1_agent',
-            name='cf2',
-            parameters=[get_agent_params(2)]
-        ),
-        Node(
-            package='gaden_simulation_p',
-            executable='APF_1_1_agent',
-            name='cf3',
-            parameters=[get_agent_params(3)]
-        ),
-        Node(
-            package='gaden_simulation_p',
-            executable='APF_1_1_agent',
-            name='cf4',
-            parameters=[get_agent_params(4)]
-        ),
-
-        # Simulated gas sensor nodes with namespaces
+        
+    # GSL environment node
+    env_node = Node(
+        package='gaden_simulation_p',
+        executable='APF_1_1_env',
+        name='GSLenvironment'
+        )
+    
+    # Group for sensor nodes
+    sensor_group = GroupAction([
         Node(
             package='simulated_gas_sensor',
             executable='simulated_gas_sensor',
@@ -139,5 +101,76 @@ def generate_launch_description():
                 {'sensor_frame': 'cf4'},
                 {'fixed_frame': 'world'}
             ]
+        ),
+    ])
+
+    # Handler to launch sensors after env node starts
+    sensor_handler = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=env_node,
+            on_start=[sensor_group]
+        )
+    )
+
+    return LaunchDescription([
+        # Use simulation time parameter
+        DeclareLaunchArgument('use_sim_time', default_value='false'),
+
+        # Clock node
+        Node(
+            package='gaden_simulation_p',
+            executable='clock',
+            name='Clock',
+            parameters=[{'factor': 18.0}]
+        ),
+
+        # Include GSL Hover Swarm Launch
+        IncludeLaunchDescription(PythonLaunchDescriptionSource(gsl_hover_launch),),
+
+        # Include GSL GADEN Player Launch
+        IncludeLaunchDescription(PythonLaunchDescriptionSource(gaden_player_launch),),
+
+        # GSL environment node
+        env_node,
+
+        # Handler for sensors
+        sensor_handler,
+        
+        # Agent nodes with flattened parameters
+        Node(
+            package='gaden_simulation_p',
+            executable='APF_1_1_agent',
+            name='cf1',
+            parameters=[get_agent_params(1), {
+                "crazyflies_ids": crazyflies_ids,
+                "crazyflies_positions": crazyflies_positions
+            }]
+        ),
+        Node(
+            package='gaden_simulation_p',
+            executable='APF_1_1_agent',
+            name='cf2',
+            parameters=[get_agent_params(2), {
+                "crazyflies_ids": crazyflies_ids,
+                "crazyflies_positions": crazyflies_positions
+            }]
+        ),
+        Node(
+            package='gaden_simulation_p',
+            executable='APF_1_1_agent',
+            name='cf3',
+            parameters=[get_agent_params(3), {
+                "crazyflies_ids": crazyflies_ids,
+                "crazyflies_positions": crazyflies_positions
+            }]
+        ),
+        Node(
+            package='gaden_simulation_p',
+            executable='APF_1_1_agent',
+            name='cf4',
+            parameters=[get_agent_params(4), {
+                "crazyflies_ids": crazyflies_ids,
+                "crazyflies_positions": crazyflies_positions
+            }]
         ),
     ])

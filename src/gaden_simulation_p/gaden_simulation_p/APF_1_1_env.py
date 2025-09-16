@@ -168,8 +168,8 @@ class GetForcesServer:
             pos = tf.transform.translation
             position = np.array([pos.x, pos.y, pos.z])
             
-            response.repulsion_x, response.repulsion_y, response.repulsion_z = self.traffic.GetForces(position, request.id)
-            response.attraction_x, response.attraction_y, response.attraction_z = self.bout.GetForces(position)
+            response.repulsion_x, response.repulsion_y, response.repulsion_z = self.traffic.getForce(position, request.id)
+            response.attraction_x, response.attraction_y, response.attraction_z = self.bout.getForce(position)
         
         except Exception as e:
             self.node.get_logger().warn(f"TF lookup failed: {e}")
@@ -298,8 +298,7 @@ class TrafficServer:
         mid_z = l // 2
         axs.cla()  # Clear previous plot
         # Create 3D meshgrid for the slice (Z constant at mid_z, scaled by resolution)
-        X, Y = np.meshgrid(np.linspace(0, n * resolution, n),
-                           np.linspace(0, m * resolution, m))
+        X, Y = np.meshgrid(np.linspace(0, n * resolution, n), np.linspace(0, m * resolution, m))
         Z = np.full_like(X, mid_z * resolution)  # Constant Z plane in world coordinates
 
         # Quiver with all three components (U=X, V=Y, W=Z forces)
@@ -416,11 +415,11 @@ class BoutMap (MapServer):
             for j in range(m):
                 for k in range(l):
                     pos = np.array([grid[0, i, j, k], grid[1, i, j, k], grid[2, i, j, k]])
-                    force_vec = self.GetForces(pos)
+                    force_vec = self.getForce(pos)
                     matrix[:, i, j, k] = force_vec
         return matrix
         
-def plot(self, axs):
+    def plot(self, axs):
         mid_z = self.l // 2  # Middle Z plane
         
         # --- 1) Raw concentration ---
