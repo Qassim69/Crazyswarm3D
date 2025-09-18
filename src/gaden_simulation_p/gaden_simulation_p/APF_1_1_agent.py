@@ -12,6 +12,7 @@ import numpy as np
 import rclpy
 import csv
 import time
+import ast
 
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -240,7 +241,7 @@ class MotionController:
             return np.zeros(3), np.zeros(3)
 
     def update(self):
-        f_bout, f_repulsion = self.GetForces()
+        f_bout, f_repulsion = self.getForces()
         m_bout = np.linalg.norm(f_bout)
         m_repulsion  = np.linalg.norm(f_repulsion)
 
@@ -260,7 +261,7 @@ class MotionController:
             if m_resultant < self.force_threshold or m_attraction < self.force_threshold or self.modeStartTime + self.modeDur <= now:
                 self.setpoint_mode = not self.setpoint_mode
                 self.modeStartTime = now
-                self.modeDur = Duration(self.max_time)
+                self.modeDur = Duration(seconds=self.max_time)
 
             if self.setpoint_mode:
                 self.generateSetpoint()
@@ -372,9 +373,38 @@ def main(args=None):
     rclpy.init(args=args)
     node = rclpy.create_node("crazyflie_distributed")
     
-    cfid = node.declare_parameter("cfid", 0).value
-    crazyflies_ids = node.declare_parameter("crazyflies_ids", []).value
-    crazyflies_positions = node.declare_parameter("crazyflies_positions", []).value
+    cfid_param = node.declare_parameter("cfid", "0").value
+    try:
+        cfid = int(cfid_param)
+    
+    except (ValueError, TypeError):
+        node.get_logger().error(f"Invalid cfid parameter:{cfid_param}. Using default value 0.")
+        cfid = 0
+    
+    crazyflies_ids_param = node.declare_parameter("crazyflies_ids", "[]").value
+    try:
+        if isinstance(crazyflies_ids_param, str):
+            # Convert string representation to actual list
+            crazyflies_ids = ast.literal_eval(crazyflies_ids_param)
+        else:
+            crazyflies_ids = crazyflies_ids_param
+        # Ensure all values are integers
+        crazyflies_ids = [int(x) for x in crazyflies_ids]
+
+    except (ValueError, SyntaxError, TypeError) as e:
+        node.get_logger().error(f"Invalid crazyflies_ids parameter {crazyflies_ids_param}. Using default empty list. Error: {e}")
+        crazyflies_ids = []
+    
+    crazyflies_positions_param = node.declare_parameter("crazyflies_positions", "[]").value
+    try:
+        if isinstance(crazyflies_positions_param, str):
+            crazyflies_positions = ast.literal_eval(crazyflies_positions_param)
+        else:
+            crazyflies_positions = crazyflies_positions_param
+    
+    except (ValueError, SyntaxError, TypeError) as e:
+        node.get_logger().error(f"Invalid crazyflies_positions parameter {crazyflies_positions_param}. Using default empty list. Error: {e}")
+        crazyflies_positions = []
     
     crazyflies = []
     for i, id_val in enumerate(crazyflies_ids):
@@ -386,14 +416,15 @@ def main(args=None):
     tf_buffer = Buffer()
     tf_listener = TransformListener(tf_buffer, node)
     
-    cf = None
+    cfname = None
+    initial_position = None
     for crazyflie in crazyflies:
         if int(crazyflie["id"]) == cfid:
             initial_position = crazyflie["initialPosition"]
             cfname = f"cf{cfid}"
             break
     
-    if cf is None:
+    if cfname is None:
         node.get_logger().warning(f"No CF with required ID {cfid} found!")
         rclpy.shutdown()
         return

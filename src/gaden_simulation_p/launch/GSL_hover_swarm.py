@@ -58,7 +58,7 @@ def generate_launch_description():
             },
             'max_dt': 0.01  # simulation timestep
         },
-        'world_tf_name': 'world',  # default frame
+        'world_tf_name': 'map',  # default frame
 
         # Firmware params are nested under robot_types.default in your YAML
         'firmwareParams': cfrobot_params['robot_types']['default']['firmware_params'],

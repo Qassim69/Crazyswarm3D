@@ -16,9 +16,10 @@ from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.node import Node
 import rowan
+
 from std_msgs.msg import String
-from std_msgs.msg import Empty
-# from std_srvs.srv import Empty
+from std_msgs.msg import Empty as EmptyMsg
+from std_srvs.srv import Empty as EmptySrv
 
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
@@ -107,7 +108,7 @@ class CrazyflieServer(Node):
             pub.publish(msg)
             
             self.create_service(SetGroupMask,name + '/set_group_mask', partial(self._setGroupMask_callback, name=name))
-            self.create_service(Empty,name + '/emergency', partial(self._emergency_callback, name=name))
+            self.create_service(EmptySrv,name + '/emergency', partial(self._emergency_callback, name=name))
             self.create_service(Takeoff,name + '/takeoff', partial(self._takeoff_callback, name=name))
             self.create_service(Land,name + '/land', partial(self._land_callback, name=name))
             self.create_service(GoTo,name + '/go_to', partial(self._go_to_callback, name=name))
@@ -119,7 +120,7 @@ class CrazyflieServer(Node):
             self.create_subscription(Hover,name + '/cmd_hover', partial(self._cmd_hover_changed, name=name),10)
             self.create_subscription(FullState,name + '/cmd_full_state', partial(self._cmd_full_state_changed, name=name),10)
             self.create_subscription(Position,name + '/cmd_position', partial(self._cmd_position_changed, name=name),10)
-            self.create_subscription(Empty,name + '/cmd_stop', partial(self._cmd_stop_changed, name=name),10)
+            self.create_subscription(EmptyMsg,name + '/cmd_stop', partial(self._cmd_stop_changed, name=name),10)
 
         # Create services for the entire swarm and each individual crazyflie
         self.create_service(Takeoff, 'all/takeoff', self._takeoff_callback)
@@ -129,7 +130,7 @@ class CrazyflieServer(Node):
 
         # This is the last service to announce.
         # Can be used to check if the server is fully available.
-        self.create_service(Empty, 'all/emergency', self._emergency_callback)
+        self.create_service(EmptySrv, 'all/emergency', self._emergency_callback)
 
         # step as fast as possible
         max_dt = 0.0 if 'max_dt' not in self._ros_parameters['sim'] \

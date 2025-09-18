@@ -37,11 +37,11 @@ def generate_launch_description():
         cf_type = str(drone.pop('type', 'default'))
         x, y, z = drone.pop('initial_position', [0.0, 0.0, 0.0])
         return {
-            'cfid': int(cfid),
-            'channel': int(drone.pop('channel', 0)),
-            'initial_x': float(x),
-            'initial_y': float(y),
-            'initial_z': float(z),
+            'cfid': str(cfid),
+            'channel': str(drone.pop('channel', 0)),
+            'initial_x': str(x),
+            'initial_y': str(y),
+            'initial_z': str(z),
             'cf_type': cf_type,
         }
         
@@ -63,8 +63,9 @@ def generate_launch_description():
             parameters=[
                 {'sensor_model': 0},
                 {'sensor_frame': 'cf1'},
-                {'fixed_frame': 'world'}
-            ]
+                {'fixed_frame': 'map'}
+            ],
+
         ),
         Node(
             package='simulated_gas_sensor',
@@ -75,7 +76,7 @@ def generate_launch_description():
             parameters=[
                 {'sensor_model': 0},
                 {'sensor_frame': 'cf2'},
-                {'fixed_frame': 'world'}
+                {'fixed_frame': 'map'}
             ]
         ),
         Node(
@@ -87,7 +88,7 @@ def generate_launch_description():
             parameters=[
                 {'sensor_model': 0},
                 {'sensor_frame': 'cf3'},
-                {'fixed_frame': 'world'}
+                {'fixed_frame': 'map'}
             ]
         ),
         Node(
@@ -99,7 +100,7 @@ def generate_launch_description():
             parameters=[
                 {'sensor_model': 0},
                 {'sensor_frame': 'cf4'},
-                {'fixed_frame': 'world'}
+                {'fixed_frame': 'map'}
             ]
         ),
     ])
@@ -115,7 +116,7 @@ def generate_launch_description():
     return LaunchDescription([
         # Use simulation time parameter
         DeclareLaunchArgument('use_sim_time', default_value='false'),
-
+        
         # Clock node
         Node(
             package='gaden_simulation_p',
@@ -142,8 +143,8 @@ def generate_launch_description():
             executable='APF_1_1_agent',
             name='cf1',
             parameters=[get_agent_params(1), {
-                "crazyflies_ids": crazyflies_ids,
-                "crazyflies_positions": crazyflies_positions
+                "crazyflies_ids": str(crazyflies_ids),
+                "crazyflies_positions": str(crazyflies_positions)
             }]
         ),
         Node(
@@ -151,8 +152,8 @@ def generate_launch_description():
             executable='APF_1_1_agent',
             name='cf2',
             parameters=[get_agent_params(2), {
-                "crazyflies_ids": crazyflies_ids,
-                "crazyflies_positions": crazyflies_positions
+                "crazyflies_ids": str(crazyflies_ids),
+                "crazyflies_positions": str(crazyflies_positions)
             }]
         ),
         Node(
@@ -160,8 +161,8 @@ def generate_launch_description():
             executable='APF_1_1_agent',
             name='cf3',
             parameters=[get_agent_params(3), {
-                "crazyflies_ids": crazyflies_ids,
-                "crazyflies_positions": crazyflies_positions
+                "crazyflies_ids": str(crazyflies_ids),
+                "crazyflies_positions": str(crazyflies_positions)
             }]
         ),
         Node(
@@ -169,8 +170,8 @@ def generate_launch_description():
             executable='APF_1_1_agent',
             name='cf4',
             parameters=[get_agent_params(4), {
-                "crazyflies_ids": crazyflies_ids,
-                "crazyflies_positions": crazyflies_positions
+                "crazyflies_ids": str(crazyflies_ids),
+                "crazyflies_positions": str(crazyflies_positions)
             }]
         ),
     ])

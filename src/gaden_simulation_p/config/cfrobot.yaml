@@ -1,20 +1,24 @@
 robots:
   cf1:
+    id: 1
     enabled: true
     type: default
     initial_position: [0.5, 0.5, 0.0]
     
   cf2:
+    id: 2
     enabled: true
     type: default
     initial_position: [0.5, 3.0, 0.0]
     
   cf3:
+    id: 3
     enabled: true 
     type: default
     initial_position: [0.5, 5.5, 0.0]
     
   cf4:
+    id: 4
     enabled: true
     type: default
     initial_position: [3.5, 0.5, 0.0]

@@ -33,13 +33,13 @@ CF_FRAME            = "cf{}"
 WORLD_FRAME         = "world"
 
 D_MIN = [0.25, 0.5]    				# [m] [obstacle, traffic]
-ROI = [0.5, 1, 3]                      		# [m] radius of influence [obstacle, traffic, bout]
+ROI = [0.5, 1, 3]                   # [m] radius of influence [obstacle, traffic, bout]
 DYNAMIC_KERNEL = [0.1,0.8,0.1]
 B_PARTICLE_SIZE = 0.5 # [m]
-X_SOURCE = np.array([1.5, 3.0, 0.75])       	# [m]
+X_SOURCE = np.array([1.5, 3.0, 0.75])   # [m]
 BOUNDS = [[0,0,0],[10,6,2.5]]   		# [[min],[max]]; [m]
-RESOLUTION = 0.10                         	# [m]
-UPDATE_RATE = 5                             	# [1/s]
+RESOLUTION = 0.10                       # [m]
+UPDATE_RATE = 5                         # [1/s]
 
 nx, ny, nz = np.diff(BOUNDS, axis=0)[0] / RESOLUTION
 OBSTACLE_MATRIX = np.zeros((int(nx), int(ny), int(nz)))
@@ -196,6 +196,7 @@ class TrafficServer:
     ''' 
     def getTrafficForce(self, ego_id=None, position=None):
         force = np.zeros(3)
+        epsilon = 1e-6		# Small threshold to avoid division by zero
         if position is not None:
             for i in range(self.traffic_n):
                 id = i+1
@@ -207,8 +208,11 @@ class TrafficServer:
             
                 vector = trans - position
                 distance = np.linalg.norm(vector)
+                if distance < epsilon:  # Skip if agents are too close (avoids div by zero)
+                    continue
+
                 force_magnitude = -self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
-                force += trans/distance * force_magnitude
+                force += (vector / distance) * force_magnitude
         else:
             positions = []
             for i in range(self.traffic_n):
@@ -222,8 +226,11 @@ class TrafficServer:
 
                 if id != ego_id:
                     distance = np.linalg.norm(trans)
+                    if distance < epsilon:  # Skip if agents are too close (avoids div by zero)
+                        continue
+
                     force_magnitude = -self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
-                    force += trans/distance * force_magnitude
+                    force += (trans / distance) * force_magnitude
     
         buffer = force.copy()
         force[0] += buffer[1] + buffer[2]   # Fx += Fy + Fz
@@ -351,12 +358,24 @@ class MapServer:
     def addParticle(self, position, size, value):
         r = int(size/self.resolution/2)
         i, j, k = self.cell(position[0]), self.cell(position[1]), self.cell(position[2])
-        x, y, z = np.mgrid[0:2*r-1, 0:2*r-1, 0:2*r-1]
-
-        sphere = (x-r+1)**2 + (y-r+1)**2 + (z-r+1)**2
-        mask = sphere < r**2-1
-
-        self.base[i-r+1:i+r, j-r+1:j+r, k-r+1:k+r] += mask * value
+        
+        # 3D bounds checking
+        i_start = max(0, i-r+1)
+        i_end = min(self.n, i+r)
+        j_start = max(0, j-r+1)  
+        j_end = min(self.m, j+r)
+        k_start = max(0, k-r+1)
+        k_end = min(self.l, k+r)
+        
+        # Only proceed if we have valid ranges
+        if i_start < i_end and j_start < j_end and k_start < k_end:
+            # Create mask for the valid region only
+            x, y, z = np.mgrid[i_start-i+r-1:i_end-i+r-1, 
+                            j_start-j+r-1:j_end-j+r-1, 
+                            k_start-k+r-1:k_end-k+r-1]
+            sphere = x**2 + y**2 + z**2
+            mask = sphere < r**2-1
+            self.base[i_start:i_end, j_start:j_end, k_start:k_end] += mask * value
 
     def cell(self, coord):
         return int(coord/self.resolution)  # Helper to transfer coordinates to indices
@@ -380,7 +399,12 @@ class MapServer:
 
     def getForce(self, position):
         i, j, k = self.cell(position[0]), self.cell(position[1]), self.cell(position[2])
-        return np.array([self.forces[0, i, j, k], self.forces[1, i, j, k], self.forces[2, i, j, k]])
+        
+        # 3D bounds validation
+        if 0 <= i < self.n and 0 <= j < self.m and 0 <= k < self.l:
+            return np.array([self.forces[0, i, j, k], self.forces[1, i, j, k], self.forces[2, i, j, k]])
+        else:
+            return np.zeros(3)  # Return zero force for out-of-bounds positions
 
     def vortexize(self, factor=0.75):
         gx, gy, gz = self.gradients
