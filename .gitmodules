@@ -1,0 +1,14 @@
+[submodule "src/crazyswarm2"]
+	path = src/crazyswarm2
+	url = https://github.com/Qassim69/crazyswarm2.git
+	branch = custom-sim
+[submodule "src/gaden "]
+	path = src/gaden 
+	url = https://github.com/Qassim69/GADEN.git
+	branch = custom-gaden
+[submodule "src/crazyflie-firmware"]
+	path = src/crazyflie-firmware
+	url = https://github.com/Qassim69/crazyflie-firmware.git
+[submodule "src/olfaction_msgs"]
+	path = src/olfaction_msgs
+	url = https://github.com/Qassim69/olfaction_msgs.git

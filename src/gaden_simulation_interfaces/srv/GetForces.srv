@@ -1,0 +1,8 @@
+uint8 id
+---
+float64 attraction_x
+float64 attraction_y
+float64 attraction_z
+float64 repulsion_x
+float64 repulsion_y
+float64 repulsion_z
