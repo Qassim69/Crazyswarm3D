@@ -57,9 +57,10 @@ robot_types:
           frequency: 1000 # Hz
           vars: ['pm.state']
 
+# These Marker Configurations are for the real Crazyflies who use Motion Capture System[Vicon or OptiTrack]
 numMarkerConfigurations: 4
 markerConfigurations:
-  "0":  # for standard Crazyflie
+  "0":  # Standard Crazyflie with 4 markers
     numPoints: 4
     offset: [0.0, -0.01, -0.04]
     points:
@@ -67,7 +68,7 @@ markerConfigurations:
       "1": [-0.0262914,0.0509139,0.0402475]
       "2": [-0.0328889,-0.02757,0.0390601]
       "3": [0.0431307,-0.0331216,0.0388839]
-  "1": # medium frame
+  "1": # Medium frame (bigger drone) with 4 markers
     numPoints: 4
     offset: [0.0, 0.0, -0.03]
     points:
@@ -75,7 +76,7 @@ markerConfigurations:
       "1": [-0.0156318,0.0997402,0.0508162]
       "2": [0.0461693,-0.0881012,0.0380672]
       "3": [-0.0789959,-0.0269793,0.0461144]
-  "2": # big frame
+  "2": # Big frame (largest drone) with 4 markers
     numPoints: 4
     offset: [0.0, 0.0, -0.06]
     points:
@@ -83,7 +84,7 @@ markerConfigurations:
       "1": [-0.0113941,0.00945842,0.0984811]
       "2": [-0.0306277,0.0514879,0.0520456]
       "3": [0.0535816,-0.0400775,0.0432799]
-  "3":  # for standard Crazyflie with a single marker
+  "3":  # Standard Crazyflie with just 1 marker
     numPoints: 1
     offset: [0.0, -0.01, -0.04]
     points:
@@ -91,12 +92,12 @@ markerConfigurations:
 numDynamicsConfigurations: 1
 dynamicsConfigurations:
   "0":
-    maxXVelocity: 2.0
-    maxYVelocity: 2.0
-    maxZVelocity: 3.0
-    maxPitchRate: 20.0
-    maxRollRate: 20.0
-    maxYawRate: 10.0
-    maxRoll: 1.4
-    maxPitch: 1.4
-    maxFitnessScore: 0.001
+    maxXVelocity: 2.0    # Max velocity in X [m/s]
+    maxYVelocity: 2.0    # Max velocity in Y [m/s]
+    maxZVelocity: 3.0    # Max velocity in Z [m/s]
+    maxPitchRate: 20.0   # Max pitch rate [rad/s]
+    maxRollRate: 20.0    # Max roll rate [rad/s]
+    maxYawRate: 10.0     # Max yaw rate [rad/s]
+    maxRoll: 1.4         # Max roll angle [rad] (~80°)
+    maxPitch: 1.4        # Max pitch angle [rad] (~80°)
+    maxFitnessScore: 0.001  # Matching threshold for marker-to-drone assignment

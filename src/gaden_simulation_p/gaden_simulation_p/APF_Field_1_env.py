@@ -9,11 +9,10 @@ import csv
 
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time as RclpyTime
 
 from tf2_ros import Buffer, TransformListener
-from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
-from rclpy.time import Time as RclpyTime
 from builtin_interfaces.msg import Time as TimeMsg
 
 from scipy import ndimage			#This is for 3D [gaussian_filter()]
@@ -22,7 +21,7 @@ from scipy import ndimage			#This is for 3D [gaussian_filter()]
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-from geometry_msgs.msg import Pose, Point, Quaternion, TransformStamped, Vector3, PointStamped
+from geometry_msgs.msg import Point
 from gaden_simulation_interfaces.srv import GetForces
 from gaden_simulation_interfaces.msg import Bout
 
@@ -55,7 +54,8 @@ OBSTACLE_MATRIX[:,:,-1] = -1.0
 MAP_NAMES = ["Obstacle (repulsion)", "Traffic (repulsion)", "Bout (attraction)"]
 
 now = time.localtime()
-now_str = str(now[0])+'_'+str(now[1])+'_'+str(now[2])+'_'+str(now[3])+'_'+str(now[4])
+# now[2] is the Day, now[1] is the Month
+now_str = f"{now[2]}_{now[1]}"
 
 def draw(fig, ax, attraction, i, node):
     ax.clear()
@@ -76,8 +76,6 @@ def draw(fig, ax, attraction, i, node):
     
     # Plot 3D quiver (vectors normalized for clarity)
     ax.quiver(X, Y, Z, forces[0], forces[1], forces[2], length=0.1, normalize=True)
-    
-    node.get_logger().info("Add Source and Labels")
     # Scatter the source point
     ax.scatter(*X_SOURCE, color='red', s=30)
     
@@ -91,33 +89,23 @@ def draw(fig, ax, attraction, i, node):
     ax.set_title("3D Force Field")
     
     # Update the canvas non-blockingly
-    node.get_logger().info("Draw and Flush")
     fig.canvas.draw()
     fig.canvas.flush_events()
     
-    node.get_logger().info("Save")
-    plt.savefig(f"log/GSL/Env/{now_str}_3d_fig{i}.pdf")
-    
-def staticTransform(node, header, child):
-    # Broadcast a transform from world to map, for GADEN - crazyswarm compatability
-    bc = StaticTransformBroadcaster(node)
-    static_transformStamped = TransformStamped()
-    static_transformStamped.header.stamp = node.get_clock().now().to_msg()
-    static_transformStamped.header.frame_id = header
-    static_transformStamped.child_frame_id = child
-    static_transformStamped.transform.translation = Vector3(x=0.0, y=0.0, z=0.0)
-    static_transformStamped.transform.rotation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
-    bc.sendTransform(static_transformStamped)
+    plt.savefig(f"log/GSL/Env/{now_str}_3D_fig{i}.pdf")
 
 def run(node, tf_buffer):
     """Initialization"""
-    # Logging
-    now = time.localtime()
-    now_str = str(now[0])+'_'+str(now[1])+'_'+str(now[2])+'_'+str(now[3])+'_'+str(now[4])
-    logfile = open("log/GSL/Env/{}_source_estimation.csv".format(now_str), "w+")
+# Logging
+    # Get Wall Clock Time in seconds as a float
+    system_clock = Clock(clock_type=ClockType.SYSTEM_TIME)
+    time_sec = system_clock.now().nanoseconds / 1e9
+    # File for Source Estimation
+    logfile = open(f"log/GSL/Env/Sensor_Estimation_{time_sec:.4f}.csv", "w")
     writer = csv.writer(logfile)
-    writer.writerow(["t", "estimate_x", "estimate_y", "error"])
-
+    # Heading of the File for Source Estimation
+    writer.writerow(["Wall Time", "Estimate_x", "Estimate_y", "Estimate_z", "Error"])
+    
     # Map instances
     traffic = TrafficServer(node, BOUNDS, D_MIN[0], ROI[0], D_MIN[1], ROI[1], 4, tf_buffer)
     bout = BoutMap(node, BOUNDS, RESOLUTION, ROI[2], UPDATE_RATE, BOUT_TOPIC, B_PARTICLE_SIZE, 1)
@@ -138,15 +126,12 @@ def run(node, tf_buffer):
     counter = [0]	 # Initialize counter for visualization updates
 
     def timer_callback():
-        node.get_logger().info("Bout update")
         bout.update()
-        
-        # Logging
-        node.get_logger().info("Logging")
-        current_time = node.get_clock().now().nanoseconds * 1e-9
+    # Logging
+        # Get Wall Clock Time in seconds as a float
+        current_time = system_clock.now().nanoseconds / 1e9
         writer.writerow([current_time, *bout.sourceEstimate, bout.sourceEstimateError])
         
-        node.get_logger().info("Visualization")
         # Visualization logic
         counter[0] += 1
         if counter[0] >= 10:
@@ -160,18 +145,16 @@ def run(node, tf_buffer):
 
             counter[0] = 0
 	
-        node.get_logger().info("Repeat")
-	
-    # Create a timer for periodic updates (fires every 1/UPDATE_RATE seconds)
-    timer_period = 1.0 / UPDATE_RATE  # e.g., 0.2 seconds for UPDATE_RATE=5
+    # Create a timer for periodic updates
+    timer_period = 1.0 / UPDATE_RATE 
     timer = node.create_timer(timer_period, timer_callback)
 
-    # Spin the node to process callbacks, subscriptions, and services
-    rclpy.spin(node)
-
-    # Saving map matrices as csv
-    # np.savetxt('log/GSL/'+now_str+'_bouts.csv', bout.matrix, delimiter=',')
-    # np.savetxt('log/GSL/'+now_str+'_history.csv', history_map.matrix, delimiter=',')
+    try:
+        # Spin the node to process callbacks, subscriptions, and services
+        rclpy.spin(node)
+    finally:
+        # Guarantee the file is safely closed when the node shuts down
+        logfile.close()
 
 class GetForcesServer:
     def __init__(self, node, name, obstacle, traffic, bout, tf_buffer):
@@ -208,16 +191,13 @@ class TrafficServer:
         self.wall_dmax = wall_dmax
         self.wall_dmin = wall_dmin
         
-        self.traffic_k = 1 * traffic_dmin**2/(1/traffic_dmin - 1/traffic_dmax)   # Force > 1 for d < d_min
-        self.wall_k = 1 * wall_dmin**2/(1/wall_dmin - 1/wall_dmax)   		 # Force > 1 for d < d_min
+        # Calculate force multipliers
+        # Force > 1 for d < d_min
+        self.traffic_k = 1 * traffic_dmin**2 / (1/traffic_dmin - 1/traffic_dmax)
+        # Force > 1 for d < d_min
+        self.wall_k = 1 * wall_dmin**2 / (1/wall_dmin - 1/wall_dmax)
 	
         self.tf = tf_buffer
-
-    def getPositions(self):
-        pass
-
-    def getForceFromPositions(self, pos1, pos2):
-        pass
 
     def getTrafficForce(self, ego_id=None, position=None):
         force = np.zeros(3)
@@ -319,6 +299,7 @@ class TrafficServer:
         return force
 
     def getForce(self, position, id=-1):
+        """Returns combined wall and traffic force."""
         return self.getWallForce(position) + self.getTrafficForce(id)
 
     def getMatrix(self, n, m, l, resolution):
@@ -346,31 +327,45 @@ class TrafficServer:
         return matrix
 
     def plot(self, axs, n, m, l, resolution):
+        """
+        Renders a 3D slice visualization of the traffic forces.
+        """
+    # 1. Prepare Data
         matrix = self.getMatrix(n, m, l, resolution)
-        # Plot a 3D quiver slice (middle z for simplicity; adjust slice as needed)
         mid_z = l // 2
-        axs.cla()  # Clear previous plot
-        # Create 3D meshgrid for the slice (Z constant at mid_z, scaled by resolution)
-        X, Y = np.meshgrid(np.linspace(0, n * resolution, n), np.linspace(0, m * resolution, m))
-        Z = np.full_like(X, mid_z * resolution)  # Constant Z plane in world coordinates
+        
+        X, Y = np.meshgrid(
+            np.linspace(0, n * resolution, n), 
+            np.linspace(0, m * resolution, m)
+        )
+        Z = np.full_like(X, mid_z * resolution)
 
-        # Quiver with all three components (U=X, V=Y, W=Z forces)
-        axs.quiver(X, Y, Z,
-                   matrix[0, :, :, mid_z],
-                   matrix[1, :, :, mid_z],
-                   matrix[2, :, :, mid_z],
-                   length=0.1, normalize=True)  # Normalize for clarity
+    # 2. Prepare Axis
+        axs.cla() 
+        
+    # 3. Plot Elements
+        axs.quiver(
+            X, Y, Z,
+            matrix[0, :, :, mid_z],
+            matrix[1, :, :, mid_z],
+            matrix[2, :, :, mid_z],
+            length=0.1, normalize=True
+        )
 
-        # Set limits and labels
+    # 4. Format Axes
         axs.set_xlim(0, n * resolution)
         axs.set_ylim(0, m * resolution)
-        axs.set_zlim((mid_z - 1) * resolution, (mid_z + 1) * resolution)  # Tight Z-range
+        axs.set_zlim((mid_z - 1) * resolution, (mid_z + 1) * resolution)
         axs.set_xlabel('X (m)')
         axs.set_ylabel('Y (m)')
         axs.set_zlabel('Z (m)')
         axs.set_title('Traffic Force Field (Middle Z Slice, 3D)')
 
 class MapServer:
+    """
+    Base class for spatial maps representing environmental data using grids.
+    Handles basic diffusion, differentiation, and vector fields (vortices).
+    """
     def __init__(self, bounds, resolution, roi, base=None):
         self.bounds = bounds
         self.resolution = resolution
@@ -389,6 +384,7 @@ class MapServer:
         else:
             self.base = base.copy()
 
+        # Processing layers
         self.diffused = np.zeros_like(self.base)
         self.diffuse()
 
@@ -402,38 +398,44 @@ class MapServer:
         self.normalize()
 
     def addParticle(self, position, size, value):
+        """Adds a source particle to the environment matrix."""
         r = int(size/self.resolution/2)
         i, j, k = self.cell(position[0]), self.cell(position[1]), self.cell(position[2])
         
         # 3D bounds checking
-        i_start = max(0, i-r+1)
-        i_end = min(self.n, i+r)
-        j_start = max(0, j-r+1)  
-        j_end = min(self.m, j+r)
-        k_start = max(0, k-r+1)
-        k_end = min(self.l, k+r)
+        i_start = max(0, i - r + 1)
+        i_end   = min(self.n, i + r)
+        j_start = max(0, j - r + 1)  
+        j_end   = min(self.m, j + r)
+        k_start = max(0, k - r + 1)
+        k_end   = min(self.l, k + r)
         
         # Only proceed if we have valid ranges
         if i_start < i_end and j_start < j_end and k_start < k_end:
-            # Create mask for the valid region only
-            x, y, z = np.mgrid[i_start-i+r-1:i_end-i+r-1, 
-                            j_start-j+r-1:j_end-j+r-1, 
-                            k_start-k+r-1:k_end-k+r-1]
+            # Mask generation for spherical particle distribution
+            x, y, z = np.mgrid[
+                i_start - i + r - 1 : i_end - i + r - 1, 
+                j_start - j + r - 1 : j_end - j + r - 1, 
+                k_start - k + r - 1 : k_end - k + r - 1
+            ]
             sphere = x**2 + y**2 + z**2
-            mask = sphere < r**2-1
+            mask = sphere < r**2 - 1
             self.base[i_start:i_end, j_start:j_end, k_start:k_end] += mask * value
 
     def cell(self, coord):
-        return int(coord/self.resolution)  # Helper to transfer coordinates to indices
+        """Helper to convert spatial coordinates to grid indices."""
+        return int(coord/self.resolution)
 
     def diffuse(self):
-        # self.applyKernel(self.kernel, self.base, self.diffused)
+        """Applies a 3D Gaussian filter to simulate diffusion."""
         self.diffused = ndimage.gaussian_filter(self.base, sigma=self.sigma, mode='constant', cval=0)
 
     def differentiate(self):
+        """Calculates spatial gradients of the diffused map."""
         self.gradients = np.array(np.gradient(self.diffused, self.resolution))
 
     def normalize(self):
+        """Normalizes the vortex forces to a 0-1 scale."""
         magnitude = np.linalg.norm(self.vorteces, axis=0)
         _min = magnitude.min()
         _max = magnitude.max()
@@ -444,6 +446,7 @@ class MapServer:
             self.forces = self.gradients.copy()
 
     def getForce(self, position):
+        """Returns the specific normalized force vector at a given 3D position."""
         i, j, k = self.cell(position[0]), self.cell(position[1]), self.cell(position[2])
         
         # 3D bounds validation
@@ -453,29 +456,40 @@ class MapServer:
             return np.zeros(3)  # Return zero force for out-of-bounds positions
 
     def vortexize(self, factor=0.75):
-        gx, gy, gz = self.gradients
-        self.vorteces[0] = gx + factor * (gy + gz)
-        self.vorteces[1] = gy - factor * (gx + gz)
-        self.vorteces[2] = gz + factor * (gx - gy)
+        """Converts gradient matrices into a vortex vector field."""
+        self.vorteces[0] = self.gradients[0] + self.gradients[1]*factor
+        self.vorteces[1] = self.gradients[1] - self.gradients[0]*factor
+        self.vorteces[2] = 0.0
+
+        # gx, gy, gz = self.gradients
+        # self.vorteces[0] = gx + factor * (gy + gz)
+        # self.vorteces[1] = gy - factor * (gx + gz)
+        # self.vorteces[2] = gz + factor * (gx - gy)
 
 class BoutMap (MapServer):
+    """
+    Subclass of MapServer specifically tailored to handle attractive goals or 'bouts'.
+    Subscribes to point messages to update internal maps dynamically.
+    """
     def __init__(self, node, bounds, resolution, roi, frequency, topic, particle_size, particle_value=1):
         super().__init__(bounds, resolution, roi)
-        
         self.node = node
         self.subscriber = node.create_subscription(Point, topic, self.handleInput, 10)
+        
         self.particle_size = particle_size
         self.particle_value = particle_value
         self.dynamic_sigma = roi / resolution 
         
-        self.sourceEstimate = np.array([99.0, 99.0])
+        self.sourceEstimate = np.array([99.0, 99.0, 99.0])
         self.sourceEstimateError = 99.0
 
     def handleInput(self, msg):
+        """Callback to add new sources (bouts) based on incoming messages."""
         self.addParticle([msg.x, msg.y, msg.z], self.particle_size, self.particle_value)
         self.base = ndimage.gaussian_filter(self.base, sigma=self.dynamic_sigma, mode="constant", cval=0)
     
     def update(self):
+        """Processes the physics layers frame-by-frame."""
         self.diffuse()
         self.updateSourceEstimate()
         self.differentiate()
@@ -490,8 +504,10 @@ class BoutMap (MapServer):
         self.node.get_logger().info("3")
 
     def getMatrix(self, n, m, l, resolution):
+        """Fetches the 3D grid representation of the force field."""
         grid = np.mgrid[0:n, 0:m, 0:l] * resolution + resolution / 2.0
         matrix = np.zeros((3, n, m, l))
+        
         for i in range(n):
             for j in range(m):
                 for k in range(l):
@@ -501,31 +517,44 @@ class BoutMap (MapServer):
         return matrix
         
     def plot(self, axs):
-        mid_z = self.l // 2  # Middle Z plane
+        """
+        Renders detailed diagnostic views of the BoutMap across 3 subplots.
+        axs[0]: Base map
+        axs[1]: Diffused map
+        axs[2]: 3D Force Field
+        """
+        # Middle Z plane for 2D visualizations
+        mid_z = self.l // 2
         
+    # 1. Raw Concentration (Base Map)
         self.node.get_logger().info("Base")
-        # Raw concentration
         axs[0].cla()
+
+        # Plot and label
         axs[0].matshow(self.base[:, :, mid_z].T, origin='lower')
-        peak = np.unravel_index(np.argmax(self.base[:, :, mid_z]), self.base[:, :, mid_z].shape)
-        axs[0].scatter(*peak, c="lime")
-        axs[0].set_title("Bout Map")
-        
+        peak_base = np.unravel_index(np.argmax(self.base[:, :, mid_z]), self.base[:, :, mid_z].shape)
+        axs[0].scatter(*peak_base, c="lime")
+        axs[0].set_title("Base Map (mid-Z)")
+
+    # 2. Diffused Concentration
         self.node.get_logger().info("Potential")
-        # Diffused concentration
         axs[1].cla()
+
+        # Plot and label
         axs[1].matshow(self.diffused[:, :, mid_z].T, origin='lower')
         peak = np.unravel_index(np.argmax(self.diffused[:, :, mid_z]), self.diffused[:, :, mid_z].shape)
+        
         if self.sourceEstimateError != 99.0:
             axs[1].scatter(*peak, c="lime")
         axs[1].set_title("Bout Potential Field")
         
+    # 3. 3D Force Field
         self.node.get_logger().info("Quiver")
-        # Full 3D force field (with Z)
         axs[2].cla()
-        # Create 3D meshgrid for the slice (Z constant at mid_z)
+
+        # Setup Grid
         X, Y = np.meshgrid(np.arange(self.n), np.arange(self.m))
-        Z = np.full_like(X, mid_z)  # Constant Z plane
+        Z = np.full_like(X, mid_z)
         
         if self.sourceEstimateError != 99.0:
             # Quiver with all three components (U=X, V=Y, W=Z forces)
@@ -549,9 +578,12 @@ class BoutMap (MapServer):
 def main(args=None):
     rclpy.init(args=args)
     node = Node("GSL_MapServer")
+
+    # Debug environment info
     node.get_logger().info(f"PYTHONPATH: {os.environ.get('PYTHONPATH')}")
     node.get_logger().info(f"PATH: {os.environ.get('PATH')}")
     
+    # Initialize TF Listeners
     tf_buffer = Buffer()
     tf_listener = TransformListener(tf_buffer, node)
     

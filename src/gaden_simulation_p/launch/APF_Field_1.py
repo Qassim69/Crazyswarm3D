@@ -20,11 +20,11 @@ def generate_launch_description():
         data = yaml.safe_load(f)
     crazyflies_data = data['robots']
     
-    # Use simulation time argument - CRITICAL: Set consistent time policy
+    # Do not use ROS Time for Real. Keep it False. 
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time',
-        default_value='false',  # Use wall clock time to avoid timing conflicts
-        description='Use wall clock time for all nodes'
+        default_value='false',
+        description='This means Wall Clock will be used.'
     )
     
     world_to_map_tf = Node(
@@ -61,6 +61,7 @@ def generate_launch_description():
             'use_sim_time': LaunchConfiguration('use_sim_time')
         }
     
+# Declare Environment Node (GSL)
     # GSL environment node
     env_node = Node(
         package='gaden_simulation_p',
@@ -69,8 +70,9 @@ def generate_launch_description():
         parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
         output='screen'
     )
-       
-    # Create individual agent nodes
+
+# Declare Individual Agent Nodes
+    # Agent CF1
     agent_cf1 = Node(
         package='gaden_simulation_p',
         executable='APF_Field_1_agent',
@@ -84,7 +86,8 @@ def generate_launch_description():
         ],
         output='screen'
     )
-    
+
+    # Agent CF2
     agent_cf2 = Node(
         package='gaden_simulation_p',
         executable='APF_Field_1_agent',
@@ -100,15 +103,15 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        # Use simulation time parameter
+        # Use ROS Time parameter
         use_sim_time_arg,
         
-        # Start TF publisher first
+        # Static Transform from world to map
         world_to_map_tf,
         
-        # Start included launches with proper use_sim_time propagation
+        # Start APF_Field_1_hover_swarm.py after 2s
         TimerAction(
-            period=1.0,  # 1 second delay after TF
+            period=2.0,
             actions=[
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(field_hover_launch),
@@ -118,31 +121,24 @@ def generate_launch_description():
         ),
         
         TimerAction(
-            period=2.0,	# Start environment and sensors after 2 seconds
+            period=6.0,	# Start Environment Node after 6s
             actions=[env_node]
         ),
         
-        # Start CF1 first
+        # Start CF1
         TimerAction(
-            period=5.0,  # 5 second after after all services
+            period=8.0,  # CF1 starts 2s after Environment Node
             actions=[
                 LogInfo(msg="Starting CF1 agent..."),
                 agent_cf1
             ]
         ),
-        # Start CF2 after CF1 has started
-        RegisterEventHandler(
-            OnProcessStart(
-                target_action=agent_cf1,
-                on_start=[
-                    TimerAction(
-                        period=1.0,  # 1 second delay between agents
-                        actions=[
-                            LogInfo(msg="Starting CF2 agent..."),
-                            agent_cf2
-                        ]
-                    )
-                ]
-            )
+        # Start CF2
+        TimerAction(
+            period=9.0,  # CF2 starts 1s after CF1
+            actions=[
+                LogInfo(msg="Starting CF2 agent..."),
+                agent_cf2
+            ]
         ),
     ])

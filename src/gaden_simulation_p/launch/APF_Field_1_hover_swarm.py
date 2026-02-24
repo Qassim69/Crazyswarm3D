@@ -43,7 +43,7 @@ def generate_launch_description():
     backend = DeclareLaunchArgument('backend', default_value='cflib', description='Backend to use')
 
     # Run crazyflie_server.cpp[crazyflie/src] for Real, if sim is set to False
-    crazyflie_server_node = Node(
+    real_node = Node(
         package='crazyflie',
         executable='crazyflie_server',
         name='crazyflie_server',
@@ -55,7 +55,7 @@ def generate_launch_description():
     return LaunchDescription([
         sim_arg,
         backend,
-        crazyflie_server_node,
+        real_node,
         #Node(
         #     package='rviz2',
         #     executable='rviz2',
