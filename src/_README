@@ -1,0 +1,39 @@
+README
+
+PREREQUISITES:
+- Ubuntu 22.04.X LTS
+- ROS Humble
+    > https
+- GADEN2 (commit aa80f85, included)
+    > https
+- Crazyswarm2 (dev-sim-ros branch, commit 074ecd3, included)
+    > https
+
+COMPONENTS:
+- launch files 
+    > ros_ws/src/crazyswarm/launch
+- scripts 
+    > ros_ws/src/crazyswarm/scripts
+- GADEN files, sim only (room setup, wind sim.)
+    > ros_ws/src/gaden/test_env/10x6_empty_room
+
+USAGE:
+start a terminal(ctrl + alt + t) in the launch folder
+Simulation example: roslaunch APF_1_1.launch sim:=1
+Real-world example: roslaunch field_APF_1.launch
+
+TROUBLESHOOTING:
+- make sure the entries in the crazyflies.yaml and launch file match
+- make sure the radio channel (crazyflies.yaml) and url (script) match the url of the real drones
+- ...
+
+FURTHER READING:
+- ROS: http://wiki.ros.org/
+- GADEN: https://www.mdpi.com/1424-8220/17/7/1479
+- Crazyswarm: https://crazyswarm.readthedocs.io/en/latest/
+- Häusler, F. Gas Source Localization Using Swarm Robotics and Nano-Quadcopters (Thesis)
+- IEEE Sensors conference paper
+
+CONTACT:
+Mr. Qassim Gazi
+qassimgazi06@gmail.com
