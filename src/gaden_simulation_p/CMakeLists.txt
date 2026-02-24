@@ -17,7 +17,6 @@ ament_python_install_package(${PROJECT_NAME})
 
 # Install Python entry-point wrappers
 install(PROGRAMS
-  scripts/clock
   scripts/APF_1_1_env
   scripts/APF_1_1_agent
   scripts/APF_Field_1_env
