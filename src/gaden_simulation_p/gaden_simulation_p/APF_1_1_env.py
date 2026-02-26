@@ -108,7 +108,7 @@ def run(node, tf_buffer):
     counter = [0]	 # Initialize counter for visualization updates
 
     def timer_callback():
-        node.get_logger().info("Bout update")
+        node.get_logger().debug("Bout update")
         bout.update()
 
         # Visualization logic
