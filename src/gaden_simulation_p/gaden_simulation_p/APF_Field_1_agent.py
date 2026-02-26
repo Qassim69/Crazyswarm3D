@@ -258,19 +258,21 @@ class MotionController:
     def getForces(self):
         """Retrieves the Attraction and Repulsion Forces from the GetForces service."""
         # If there is a completed future, consume it and cache the result
-        if self._forces_future is not None and self._forces_future.done():
-            try:
-                resp = self._forces_future.result()
-                if resp is not None:
-                    attraction = np.array([resp.attraction_x, resp.attraction_y, resp.attraction_z], dtype=float)
-                    repulsion = np.array([resp.repulsion_x, resp.repulsion_y, resp.repulsion_z], dtype=float)
-                    self._last_forces = (attraction, repulsion)
-            
-            except Exception as e:
-                self.node.get_logger().warning(f"GetForces future failed: {e}")
-            
-            finally:
-                self._forces_future = None
+        future = self._forces_future
+        if future is not None:
+            if future.done():
+                try:
+                    resp = future.result() # type: ignore
+                    if resp is not None:
+                        attraction = np.array([resp.attraction_x, resp.attraction_y, resp.attraction_z], dtype=float)
+                        repulsion = np.array([resp.repulsion_x, resp.repulsion_y, resp.repulsion_z], dtype=float)
+                        self._last_forces = (attraction, repulsion)
+                
+                except Exception as e:
+                    self.node.get_logger().warning(f"GetForces future failed: {e}")
+                
+                finally:
+                    self._forces_future = None
 
         # If no in-flight request, start a new one
         if self._forces_future is None:
@@ -614,9 +616,6 @@ def fetch_param_types(node, cfname):
     
     return paramTypeDict
 
-if __name__ == "__main__":
-    main()
-
 def main(args=None):
     rclpy.init(args=args)
     node = rclpy.create_node("crazyflie_distributed")
@@ -721,12 +720,15 @@ def main(args=None):
 # Wait to ensure other Nodes are fully aware of APF_1_1_agent Node
     node.get_logger().info(f"Waiting 2 seconds for system stabilization...")
     wait_dur = Duration(seconds=2.0)
-    start = self.system_clock.now()
-    while self.system_clock.now() - start < wait_dur:
+    start = node.get_clock().now()
+    while node.get_clock().now() - start < wait_dur:
         rclpy.spin_once(node, timeout_sec=0.1)
 
 # Begin Execution 
     node.get_logger().info(f"Starting Control Loop for {cfname} Node")
-    run(node, cf, cfid, tf_buffer, cfname)
+    run(node, cf, cfid)
 
     rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
