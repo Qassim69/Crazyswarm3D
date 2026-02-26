@@ -557,14 +557,14 @@ def fetch_param_types(node, cfname):
     """
     Dynamically queries the Crazyflie Server to get Parameter Types.
     """
-    # Define Service Clients
     list_client = node.create_client(ListParameters, '/crazyflie_server/list_parameters')
     describe_client = node.create_client(DescribeParameters, '/crazyflie_server/describe_parameters')
     
-    # Wait for Services
-    if not list_client.wait_for_service(timeout_sec=10.0):
-        node.get_logger().warn("Services not available. Proceeding without Parameter Types")
-        return {}
+    # Wait for Services (loop until found, avoids failing instantly on start up)
+    while not list_client.wait_for_service(timeout_sec=1.0):
+        if not rclpy.ok():
+            return {}
+        node.get_logger().info("Waiting for /crazyflie_server/list_parameters service...")
     
     # Create a Parameter Types List 
     FIRMWARE_PREFIX = "robot_types.default.firmware_params."
@@ -575,7 +575,7 @@ def fetch_param_types(node, cfname):
         list_req.depth = ListParameters.Request.DEPTH_RECURSIVE
 
         future = list_client.call_async(list_req)
-        rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=15.0)
 
         if not future.done() or future.result() is None:
             node.get_logger().warn("Failed to retrieve Parameter List (timeout or empty).")
@@ -698,7 +698,13 @@ def main(args=None):
     
 # Verify TF Connection
     try:
-       trans = tf_buffer.lookup_transform("world", cfname, rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=5))
+       wait_until = node.get_clock().now() + rclpy.duration.Duration(seconds=5.0)
+       while node.get_clock().now() < wait_until:
+           if tf_buffer.can_transform("map", cfname, rclpy.time.Time()):
+               break
+           rclpy.spin_once(node, timeout_sec=0.1)
+
+       trans = tf_buffer.lookup_transform("map", cfname, rclpy.time.Time())
        ts = trans.header.stamp
        z = trans.transform.translation.z
        node.get_logger().info(f"TF Connection Verified: Found transform for {cfname}")
