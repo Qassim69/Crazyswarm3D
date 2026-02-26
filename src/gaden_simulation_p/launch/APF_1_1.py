@@ -208,13 +208,13 @@ def generate_launch_description():
 
         # Start Environment and Sensor after 8s which is 5s after gaden_player and crazyflie_server[gsl_hover_launch]
         TimerAction(
-            period=8.0,
+            period=15.0,
             actions=[env_node, sensor_group]
         ),
         
         # Start CF1
         TimerAction(
-            period=10.0,  # CF1 starts 2s after Environment and Sensor
+            period=17.0,  # CF1 starts 2s after Environment and Sensor
             actions=[
                 LogInfo(msg="Starting CF1 agent..."),
                 agent_cf1
@@ -222,7 +222,7 @@ def generate_launch_description():
         ),
         # Start CF2
         TimerAction(
-            period=13.0,  # CF2 starts 3s after CF1
+            period=19.0,  # CF2 starts 3s after CF1
             actions=[
                 LogInfo(msg="Starting CF2 agent..."),
                 agent_cf2
@@ -230,15 +230,15 @@ def generate_launch_description():
         ),
         # Start CF3
         TimerAction(
-            period=16.0,  # CF3 starts 3s after CF2
+            period=21.0,  # CF3 starts 3s after CF2
             actions=[
-                LogInfo(msg="Starting CF3 agent..."),
+                LogInfo(msg="Starting CF3 agents..."),
                 agent_cf3
             ]
         ),
         # Start CF4
         TimerAction(
-            period=19.0,  # CF4 starts 3s after CF3
+            period=23.0,  # CF4 starts 3s after CF3
             actions=[
                 LogInfo(msg="Starting CF4 agent..."),
                 agent_cf4
