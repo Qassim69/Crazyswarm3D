@@ -3,51 +3,37 @@
 Artificial Potential Field Environment
 """
 import os
-import time
 import numpy as np
-
 import rclpy
+# ROS2 Imports
 from rclpy.node import Node
 from rclpy.time import Time as RclpyTime
-
 from tf2_ros import Buffer, TransformListener
-
-from scipy import ndimage			#This is for 3D [gaussian_filter()]
-'''from cv2 import getGaussianKernel'''		#This is for 2D [getGaussianKernel()]
-
+# Gausian Filtering Imports
+from scipy import ndimage			        # This is for 3D [gaussian_filter()]
+# from cv2 import getGaussianKernel		    # This is for 2D [getGaussianKernel()]
+# Python Visualization Imports
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-
-from geometry_msgs.msg import Point
+# ROS2 Custom Services
 from gaden_simulation_interfaces.srv import GetForces
-from gaden_simulation_interfaces.msg import Bout
+# ROS2 Messages
+from geometry_msgs.msg import Point
 
-# Communication
+"""PARAMETERS"""
+D_MIN               = [0.30, 0.5]    				# Minimum Distance to start applying Repulsive Force [wall, traffic] [m]
+ROI                 = [1, 3]                        # Radius of Influence [traffic, bout] [m]
+B_PARTICLE_SIZE     = 0.5                           # [m]
+X_SOURCE            = np.array([1.5, 3.0, 0.75])    # Posiotion of Gas Source [m]
+BOUNDS              = [[0,0,0],[10,6,2.6]]          # Size of the Environment [[min],[max]]; [m]
+RESOLUTION          = 0.10                          # Size of each cell in the grid maps [m]
+UPDATE_RATE         = 20                            # [1/s]
+# DYNAMIC_KERNEL    = [0.1,0.8,0.1]                 # This is for 2D [getGaussianKernel()]
+
 TOPIC_PREFIX        = "GSL"
 BOUT_TOPIC          = f"{TOPIC_PREFIX}/bouts"
 SERVICE_NAME        = f"{TOPIC_PREFIX}/GetForces"
 CF_FRAME            = "cf{}"
 WORLD_FRAME         = "map"
-
-D_MIN = [0.25, 0.5]    				# [m] [obstacle, traffic]
-ROI = [0.5, 1, 3]                   # [m] radius of influence [obstacle, traffic, bout]
-DYNAMIC_KERNEL = [0.1,0.8,0.1]
-B_PARTICLE_SIZE = 0.5 # [m]
-X_SOURCE = np.array([1.5, 3.0, 0.75])   # [m]
-BOUNDS = [[0,0,0],[10,6,2.6]]   		# [[min],[max]]; [m]
-RESOLUTION = 0.10                       # [m]
-UPDATE_RATE = 20                         # [1/s]
-
-nx, ny, nz = np.diff(BOUNDS, axis=0)[0] / RESOLUTION
-OBSTACLE_MATRIX = np.zeros((int(nx), int(ny), int(nz)))
-OBSTACLE_MATRIX[0,:,:] = -1.0 
-OBSTACLE_MATRIX[-1,:,:] = -1.0 
-OBSTACLE_MATRIX[:,0,:] = -1.0 
-OBSTACLE_MATRIX[:,-1,:] = -1.0  
-OBSTACLE_MATRIX[:,:,0] = -1.0  
-OBSTACLE_MATRIX[:,:,-1] = -1.0  
-							
-MAP_NAMES = ["Obstacle (repulsion)", "Traffic (repulsion)", "Bout (attraction)"]
 
 def draw(fig, ax, attraction):
     ax.clear()
@@ -84,16 +70,12 @@ def draw(fig, ax, attraction):
     fig.canvas.flush_events()
 
 def run(node, tf_buffer):
-    """Initialization"""
-
-    # Map instances
-    #obstacle = MapServer(BOUNDS, RESOLUTION, ROI[0], OBSTACLE_MATRIX)
-    #traffic = TrafficMap(BOUNDS, RESOLUTION, ROI[1], T_PARTICLE_SIZE, -1)
-    traffic = TrafficServer(node, BOUNDS, 0.3, 1.0, 0.5, ROI[1], 4, tf_buffer)
-    bout = BoutMap(node, BOUNDS, RESOLUTION, ROI[2], UPDATE_RATE, BOUT_TOPIC, B_PARTICLE_SIZE, 1)
-        
-    # GetForcesServer instance
-    getForcesServer = GetForcesServer(node, SERVICE_NAME, None, traffic, bout, tf_buffer)
+    # Create instances of TrafficServer to calculate Repulsive Forces from Walls and Drones.
+    traffic = TrafficServer(node, BOUNDS, D_MIN[0], D_MIN[1], 1.0, ROI[0], 4, tf_buffer)
+    # Create instance of BoutMap to calculate Attractive Forces towards Bouts.
+    bout = BoutMap(node, BOUNDS, RESOLUTION, ROI[1], BOUT_TOPIC, B_PARTICLE_SIZE, 1)  
+    # Create instance of GetForcesServer to handle service Requests for combined(Repulsion + Attraction) Forces.
+    getForcesServer = GetForcesServer(node, SERVICE_NAME, traffic, bout, tf_buffer)
 
     # Visualization
     plt.ion()
@@ -124,8 +106,8 @@ def run(node, tf_buffer):
 
             counter[0] = 0
 
-    # Create a timer for periodic updates (fires every 1/UPDATE_RATE seconds)
-    timer_period = 1.0 / UPDATE_RATE  # e.g., 0.2 seconds for UPDATE_RATE=5
+    # Create a Timer for periodic updates (every 1/UPDATE_RATE seconds[0.05s])
+    timer_period = 1.0 / UPDATE_RATE
     timer = node.create_timer(timer_period, timer_callback)
 
     # Spin the node to process callbacks, subscriptions, and services
@@ -133,26 +115,29 @@ def run(node, tf_buffer):
 
 class GetForcesServer:
     """
-    ROS 2 Service Server that computes and returns the combined repulsive 
-    and attractive forces for a specific agent based on TF data.
+    ROS2 Service Server that computes and returns the combined repulsive 
+    and attractive forces for requesting Agent[Drone] based on TF data.
     """
-    def __init__(self, node, name, obstacle, traffic, bout, tf_buffer):
-        #self.obstacle = obstacle
+    def __init__(self, node, name, traffic, bout, tf_buffer):
         self.node = node
-        self.traffic = traffic
-        self.bout = bout
-        self.tf = tf_buffer
         self.service = node.create_service(GetForces, name, self.handleGetForces)
+        # The TrafficServer instance to calculate Repulsive Forces from Walls and Drones.
+        self.traffic = traffic
+        # The BoutMap instance to calculate Attractive Forces towards Bouts.
+        self.bout = bout
+        # TF Buffer for looking up Drone positions.
+        self.tf = tf_buffer
 
     def handleGetForces(self, request, response):
         try:
-            # Lookup transformation for the agent requesting forces
+            # Locates the Position of the requesting Agent[Drone] using TF wrt the Map Frame.
             tf = self.tf.lookup_transform(WORLD_FRAME,CF_FRAME.format(request.id),RclpyTime())
             pos = tf.transform.translation
             position = np.array([pos.x, pos.y, pos.z])
             
-            # Calculate repulsive and attractive forces
+            # Calculate Repulsive Forces and sends it back in the Response message.
             response.repulsion_x, response.repulsion_y, response.repulsion_z = self.traffic.getForce(position, request.id)
+            # Calculate Attractive Forces and sends it back in the Response message.
             response.attraction_x, response.attraction_y, response.attraction_z = self.bout.getForce(position)
         
         except Exception as e:
@@ -164,66 +149,68 @@ class GetForcesServer:
 
 class TrafficServer:
     """
-    Manages and calculates repulsive forces from boundaries (walls) and 
-    other dynamic agents (Drones) in the environment.
+    Calculates Repulsive Forces from Wall Boundaries and other Agents[Drones] in the environment.
     """
-    def __init__(self, node, bounds, wall_dmin, wall_dmax, traffic_dmin, traffic_dmax, traffic_n, tf_buffer):
+    def __init__(self, node, bounds, wall_dmin, traffic_dmin, wall_dmax, traffic_dmax, traffic_n, tf_buffer):
         self.node = node
+        # Size of the Room 
         self.bounds = bounds
-        self.traffic_n = traffic_n
-        self.traffic_dmax = traffic_dmax
-        self.traffic_dmin = traffic_dmin
-        self.wall_dmax = wall_dmax
+        # Minimum Distance to start applying Repulsive Force from Walls.
         self.wall_dmin = wall_dmin
-        
-    # Calculate force multipliers
+        # Maximum Distance to apply Repulsive Force from Walls. Beyond this, no force is applied.      
+        self.wall_dmax = wall_dmax
+        # Minimum Distance to start applying Repulsive Force from other Drones.
+        self.traffic_dmin = traffic_dmin
+        # Maximum Distance to apply Repulsive Force from other Drones. Beyond this, no force is applied.
+        self.traffic_dmax = traffic_dmax
+        # Number of Drones in the environment to consider for Repulsive Forces.
+        self.traffic_n = traffic_n
+        # TF Buffer for looking up Drone positions.
+        self.tf = tf_buffer
+
+        # Calculate Force Multipliers
         # Force > 1 for d < d_min
         self.traffic_k = 1 * traffic_dmin**2 / (1/traffic_dmin - 1/traffic_dmax)
         # Force > 1 for d < d_min
         self.wall_k = 1 * wall_dmin**2 / (1/wall_dmin - 1/wall_dmax)  
 	
-        self.tf = tf_buffer
-    
-    def getTrafficForce(self, ego_id=None, position=None):
-        """Calculates repulsive forces generated by other agents."""
+    # A. This calculates Repulsive Forces for the requesting Agent[Drone] from Drones.
+    def getTrafficForce(self, position, ego_id=-1):
         force = np.zeros(3)
-        epsilon = 1e-6  # Small threshold to avoid division by zero
-        
-        if position is not None:
-            for i in range(self.traffic_n):
-                id = i + 1
-                try:
-                    tf = self.tf.lookup_transform(WORLD_FRAME, CF_FRAME.format(id), RclpyTime())
-                    trans = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
-                except:
-                    continue   
+        # Small threshold to avoid division by zero
+        epsilon = 1e-6
+        # If ego_id is -1, skip calculating traffic forces
+        if position is None or ego_id == -1:
+            return force
+
+        # Loop through all other Agent[Drones], 1 to 4
+        for i in range(self.traffic_n):
+            id = i + 1
+
+            # Skip comparing the requesting Agent[Drone] with itself
+            if id == ego_id:
+                continue
+
+            try:
+                # Look up the position of the other Agent[Drone] using TF.
+                tf = self.tf.lookup_transform(WORLD_FRAME, CF_FRAME.format(id), RclpyTime())
+                # Extract the translation components to get the position of the other Agent[Drone].
+                trans = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
             
-                vector = trans - position
-                distance = np.linalg.norm(vector)
-                
-                if distance < epsilon: 
-                    continue
-                
+            except Exception:
+                continue
+            
+            # Calculate the Direction vector from the requesting Agent[Drone] to the other Agent[Drone]
+            vector = trans - position
+            # Calculate the Magnitude between the requesting Agent[Drone] and the other Agent[Drone]
+            distance = np.linalg.norm(vector)
+            if distance < epsilon:
+                continue
+            
+            # Push away if the other Agent[Drone] is less than the traffic_dmax(1m) from the requesting Agent[Drone].
+            if distance < self.traffic_dmax:
                 force_magnitude = -self.traffic_k * (1/distance - 1/self.traffic_dmax) / (distance**2)
-                force += (vector / distance) * force_magnitude
-        else:
-            positions = []
-            for i in range(self.traffic_n):
-                id = i + 1
-                try:
-                    tf = self.tf.lookup_transform(CF_FRAME.format(ego_id), CF_FRAME.format(id), RclpyTime())
-                    trans = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
-                    positions.append(trans)
-                except:
-                    continue  
-
-                if id != ego_id:
-                    distance = np.linalg.norm(trans)
-                    if distance < epsilon:  
-                        continue
-
-                    force_magnitude = -self.traffic_k * (1/distance - 1/self.traffic_dmax) / (distance**2)
-                    force += (trans / distance) * force_magnitude
+                force += (trans / distance) * force_magnitude
     
         # buffer = force.copy()
         # force[0] += buffer[1] + buffer[2]   # Fx += Fy + Fz
@@ -232,44 +219,45 @@ class TrafficServer:
     
         return force
     
+    # B. This calculates Repulsive Forces for the requesting Agent[Drone] from Walls.
     def getWallForce(self, position):
-        """Calculates repulsive forces generated by the boundary walls."""
         force = np.zeros(3)
-        epsilon = 1e-6  # Small threshold to avoid division by zero
+        # Small threshold to avoid division by zero
+        epsilon = 1e-6
         
         # X-min boundary (left wall)
         distance = abs(position[0] - self.bounds[0][0])
-        if distance > epsilon and distance < self.traffic_dmax:  # Only apply if within range
+        if distance > epsilon and distance < self.wall_dmax:
             magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
             force += np.array([1, 0, 0]) * magnitude
 
         # X-max boundary (right wall)
         distance = abs(position[0] - self.bounds[1][0])
-        if distance > epsilon and distance < self.traffic_dmax:
+        if distance > epsilon and distance < self.wall_dmax:
             magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
             force += np.array([-1, 0, 0]) * magnitude
 
         # Y-min boundary (front wall)
         distance = abs(position[1] - self.bounds[0][1])
-        if distance > epsilon and distance < self.traffic_dmax:
+        if distance > epsilon and distance < self.wall_dmax:
             magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
             force += np.array([0, 1, 0]) * magnitude
 
         # Y-max boundary (back wall)
         distance = abs(position[1] - self.bounds[1][1])
-        if distance > epsilon and distance < self.traffic_dmax:
+        if distance > epsilon and distance < self.wall_dmax:
             magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
             force += np.array([0, -1, 0]) * magnitude
         
         # Z-min boundary (floor)
         distance = abs(position[2] - self.bounds[0][2])
-        if distance > epsilon and distance < self.traffic_dmax:
+        if distance > epsilon and distance < self.wall_dmax:
             magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
             force += np.array([0, 0, +1]) * magnitude
 
         # Z-max boundary (ceiling)
         distance = abs(position[2] - self.bounds[1][2])
-        if distance > epsilon and distance < self.traffic_dmax:
+        if distance > epsilon and distance < self.wall_dmax:
             magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
             force += np.array([0, 0, -1]) * magnitude
 	
@@ -280,9 +268,9 @@ class TrafficServer:
         
         return force
 
-    def getForce(self, position, id=-1):
-        """Returns combined wall and traffic force."""
-        return self.getWallForce(position) + self.getTrafficForce(id)
+    def getForce(self, position, ego_id=-1):
+        """Returns the combined Forces [Repulsion from Walls + Repulsion from Drones] for a given Position and Agent[Drone] ID."""
+        return self.getWallForce(position) + self.getTrafficForce(position, ego_id)
 
     def getMatrix(self, n, m, l, resolution):
         """
@@ -349,8 +337,11 @@ class MapServer:
     Handles basic diffusion, differentiation, and vector fields (vortices).
     """
     def __init__(self, bounds, resolution, roi, base=None):
+        # Size of the Room 
         self.bounds = bounds
+        # Resolution of the grid (size of each cell in meters)
         self.resolution = resolution
+
         self.width = bounds[1][0] - bounds[0][0]
         self.height = bounds[1][1] - bounds[0][1]
         self.depth  = bounds[1][2] - bounds[0][2]
@@ -362,8 +353,10 @@ class MapServer:
         self.sigma = roi / self.resolution
 
         if base is None:
+            # If no map was provided, create a giant 3D grid filled with 0.0 as the Base layer.
             self.base = np.full([self.n, self.m, self.l], 0.0)
         else:
+            # If a map was provided, make a copy of it to use as the Base layer.
             self.base = base.copy()
 
         # Processing layers
@@ -453,19 +446,19 @@ class BoutMap (MapServer):
     Subclass of MapServer specifically tailored to handle attractive goals or 'bouts'.
     Subscribes to point messages to update internal maps dynamically.
     """
-    def __init__(self, node, bounds, resolution, roi, frequency, topic, particle_size, particle_value=1):
+    def __init__(self, node, bounds, resolution, roi, topic, particle_size, particle_value=1):
         super().__init__(bounds, resolution, roi)
         self.node = node
+        # This Subscribes to 'GSL/bouts' when APF_1_1_agent.py Publishes a Bout Point, handleInput drops a new Attractive Force Particle onto the 3D grid
         self.subscriber = node.create_subscription(Point, topic, self.handleInput, 10)
         
         self.particle_size = particle_size
-        self.particle_value = particle_value
-        self.dynamic_sigma = roi / resolution 
+        self.particle_value = particle_value 
 
     def handleInput(self, msg):
         """Callback to add new sources (bouts) based on incoming messages."""
         self.addParticle([msg.x, msg.y, msg.z], self.particle_size, self.particle_value)
-        self.base = ndimage.gaussian_filter(self.base, sigma=self.dynamic_sigma, mode="constant", cval=0)
+        self.base = ndimage.gaussian_filter(self.base, sigma=self.sigma, mode="constant", cval=0)
     
     def update(self):
         """Processes the physics layers frame-by-frame."""
