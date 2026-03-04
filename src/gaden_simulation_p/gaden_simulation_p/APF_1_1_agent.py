@@ -1,71 +1,57 @@
 #!/usr/bin/env python3
-
 """
 Artificial Potential Field Agent
 
 NOTE: the Mellinger controller is Crazyswarm's default controller, but it has not been tuned (or even tested) for velocity control mode.
       Switch to the PID controller by changing`firmwareParams.stabilizer.controller` to `1` in your launch file.
--> Done
 """
 import numpy as np
 import rclpy
 import csv
-import time
 import ast
-
+# ROS2 Imports
 from rclpy.duration import Duration
 from rclpy.node import Node
 from tf2_ros import Buffer, TransformListener
-
-from std_msgs.msg import ColorRGBA, UInt8
-from geometry_msgs.msg import Point, PointStamped, TransformStamped
+# ROS2 Messages
+from std_msgs.msg import ColorRGBA
 from visualization_msgs.msg import Marker
-from olfaction_msgs.msg import GasSensor
-
+from geometry_msgs.msg import Point
+# ROS2 Custom Services
 from gaden_simulation_interfaces.srv import GetForces
-
-from crazyflie_py.crazyflie import Crazyflie
-
+# ROS2 Custom Messages
+from olfaction_msgs.msg import GasSensor
+# ROS2 crazyflies_server Parameter Services
 from rcl_interfaces.srv import ListParameters, DescribeParameters
 from rcl_interfaces.msg import ParameterType
+# Crazyflie Python API
+from crazyflie_py.crazyflie import Crazyflie
 
 """PARAMETERS"""
-# Computational
 EPSILON = np.finfo(np.float16).eps
 
 # Flight & Navigation parameters
-MAX_LIN_VELOCITY    =   0.4     	# m/s   only theoretically, if obstacle, traffic and bout forces would all align
+MAX_LIN_VELOCITY    =   0.4     	# m/s
 MAX_MODE_TIME       =   10       	# s
 HEIGHT_DESIRED      =   0.5     	# m
-UPDATE_RATE         =   20     		# 1/s
+UPDATE_RATE         =   20     		# Hz
 CLAMPING_THRESHOLD  =   0.25
 SWITCHING_THRESHOLD =   0.25
 SWITCHING_TIME      =   10.0
-WEIGHTS 	    = np.array([2,1]) 	#(obstacle + traffic),attraction(bout/random),cruise speed:attraction weight/sum(weights)=1/3*max_vel
-BOUNDS 		    = [[0,0,0],[10,6,2.6]]   	# [[min],[max]]; [m]
+WEIGHTS 	        =   np.array([2,1]) 	        # (obstacle + traffic),attraction(bout/random),cruise speed:attraction weight/sum(weights)=1/3*max_vel
+BOUNDS 		        =   [[0,0,0],[10,6,2.6]]        # [[min],[max]]; [m]
 
-# Bout detection parameters
+# Bout Detection parameters
 BOUT_THRESHOLD      =   200     	# bout amplitude threshold for noise reduction
-TAU                 =   0.5     	# [s] halflife for emwa smoothing of x and its derivatives
+TAU                 =   0.5     	# halflife for emwa smoothing of x and its derivatives [s]
 
-# Communication
 PREFIX              = "GSL"
 BOUT_TOPIC          = f"{PREFIX}/bouts"
-GETFORCES_SERVICE   = f"{PREFIX}/GetForces"
 SENSOR_TOPIC        = "/mox{}/Sensor_reading"
+GETFORCES_SERVICE   = f"{PREFIX}/GetForces"
 CF                  = "/cf{}"
 
-"""
-def initParams():
-    global BOUT_THRESHOLD, TAU, CLAMPING_THRESHOLD, SWITCHING_THRESHOLD, SWITCHING_TIME
-    BOUT_THRESHOLD = rospy.get_param("/CrazyflieDistributed/bout_threshold")
-    TAU = rospy.get_param("/CrazyflieDistributed/bout_halflife")
-    CLAMPING_THRESHOLD = rospy.get_param("/CrazyflieDistributed/mc_clamping_threshold")    
-    SWITCHING_THRESHOLD = rospy.get_param("/CrazyflieDistributed/mc_switching_threshold")    
-    SWITCHING_TIME = rospy.get_param("/CrazyflieDistributed/mc_switching_time")   
-"""
-
-"""BOUT DETECTION"""
+"""BOUT DETECTION LOGIC"""
 class EmwaData:
     """Helper class to manage sensor data and derivatives"""
     def __init__(self, alpha, value=0, old_value=0):
@@ -98,17 +84,17 @@ class EmwaData:
 
 class BoutDetector:
     """Detects bouts and publishes the location via the passed publisher"""
-    def __init__(self, node, tau, freq, threshold, positive, publisher, cf):
+    def __init__(self, node, tau, freq, threshold, positive, publisher, cf, cfid, bout_writer):
         """
-        Constructor
         Args:
-        tau(float):       halflife for emwa-filter: x = new_x*alpha + x*(1-alpha); alpha = 1-exp(log(0.5)/tau*freq)
-        freq(float):      frequency of sensor measurements for emwa filter: x = new_x*alpha + x*(1-alpha); alpha = 1-exp(log(0.5)/tau*freq)
-        threshold(float): threshold of x_d1 for bout detection, to discard noise induced bouts
-        positive(Bool):   True if raw ~ concentration (e.g. signal=concentration); False if -raw ~ concentration (e.g. signal=resistance)
-        publisher(rospy.Publisher): Publisher to publish point to after bout has been detected
-        tf(tf.TransformListener):   TransformListener from main for position queries
-        cfid(int):                  id of active crazyflie
+        tau(float):                 Halflife for emwa-filter: x = new_x*alpha + x*(1-alpha); alpha = 1-exp(log(0.5)/tau*freq)
+        freq(float):                Frequency of sensor measurements for emwa filter: x = new_x*alpha + x*(1-alpha); alpha = 1-exp(log(0.5)/tau*freq)
+        threshold(float):           threshold of x_d1 for bout detection, to discard noise induced bouts
+        positive(Bool):             True if raw ~ concentration (e.g. signal=concentration); False if -raw ~ concentration (e.g. signal=resistance)
+        publisher:                  Publishes Bout Point on GSL/bouts Topic after it has been detected
+        cf:                         Crazyflie object to get the position of Agent[Drone]
+        cfid:                       ID of the Agent[Drone]
+        bout_writer:                Logs the detected Bout Points in a CSV file.
         """
         self.node = node
         self.alpha = 1-np.exp(np.log(0.5)/(tau*freq))   # alpha from halflife
@@ -116,6 +102,8 @@ class BoutDetector:
         self.raw_factor = 1 if positive else -1
         self.publisher = publisher
         self.cf = cf
+        self.cfid = cfid
+        self.bout_writer = bout_writer
 
         # init emwas
         self.x_d0 = EmwaData(self.alpha)
@@ -153,6 +141,8 @@ class BoutDetector:
             self.candidateFlag = False
             if self.node.get_clock().now() > self.startTime:
                 self.publisher.publish(self.candidatePoint)
+                ros_time = self.node.get_clock().now().nanoseconds / 1e9
+                self.bout_writer.writerow([ros_time, f"cf{self.cfid}", self.candidatePoint.x, self.candidatePoint.y, self.candidatePoint.z, raw])
 
         #Candidates are discarded if negative zero-crossing occurs
         if self.x_d2.negativeZeroCrossing():
@@ -177,6 +167,7 @@ def sensorCallback(msg, pkg):
     ros_time = boutDetector.node.get_clock().now().nanoseconds / 1e9
     writer.writerow([ros_time, *drone_pos, gas_conc])
 
+"""MOTION CONTROL & VISUALIZATION"""
 class MotionController:
     """Derives velocity commands from current state of the agent and environment"""
     def __init__(self, node, bounds, max_velocity, max_time, service_name, cf, cfid):
@@ -184,11 +175,11 @@ class MotionController:
         self.node = node
         # The 3D physical boundaries of the environment [[min], [max]]
         self.bounds = bounds
-        # The Maximum Velocity the drone can travel (m/s)
+        # The Maximum Velocity the drone can travel (0.4 m/s)
         self.max_velocity = max_velocity
-        # Maximum duration for each Mode[Setpoint or Bout Point] before switching (seconds)
+        # Maximum duration for each Mode[Setpoint or Bout Point] before switching (10s)
         self.max_time = max_time
-        # The unique ID for a Crazyflie Drone
+        # The ID of the Agent[Drone]
         self.cfid = cfid
         # The Crazyflie control object [cf.cmdVelocityWorld(), cf.position(), cf.takeoff()]
         self.cf = cf
@@ -460,23 +451,32 @@ class MotionController:
         # Publishes the ARROW Marker representing the Force Vector
         publisher.publish(marker)
 
-def run(node, cf, cfid, tf_buffer, cfname):
+def run(node, cf, cfid):
     node.get_logger().info(f"APF AGENT: run() function started for cf{cfid}")
-# Logging
     # Get ROS Time in seconds as a float
     time_sec = node.get_clock().now().nanoseconds / 1e9
+
+# Logging all Sensor Readings
     # File for Sensor Readings
-    logfile = open(f"log/GSL/CFSim/Sensor_{time_sec:.4f}_cf{cfid}.csv", "w")
+    logfile = open(f"log/GSL/CFSim/Sensor/Sensor_{time_sec:.4f}_cf{cfid}.csv", "w")
     writer = csv.writer(logfile)
     # Heading of the File for Sensor Readings
     writer.writerow(["ROS Time", "x(metres)", "y(metres)", "z(metres)", "Gas Conc."])
 
+# Logging all Bout Points
+    # File for Bout Points
+    bout_logfile = open(f"log/GSL/CFSim/Bout/Bouts_{time_sec:.4f}_cf{cfid}.csv", "w")
+    bout_writer = csv.writer(bout_logfile)
+    bout_writer.writerow(["ROS Time", "CFID", "Bout_X(metres)", "Bout_Y(metres)", "Bout_Z(metres)", "Gas Conc."]) 
+
+
 # 1. Create the Publisher FIRST
     # This only Publishes the Detected Bout Point on the GSL/bouts Topic.
     bout_pub = node.create_publisher(Point, BOUT_TOPIC, 10)
+
 # 2. Initialize the BoutDetector Object SECOND
     # This initializes the BoutDetector Object, which applies the Bout Detection Logic on the Sensor Readings and uses bout_pub to Publish the Detected Bout Point.
-    bout_detector = BoutDetector(node, TAU, UPDATE_RATE, BOUT_THRESHOLD, False, bout_pub, cf)
+    bout_detector = BoutDetector(node, TAU, UPDATE_RATE, BOUT_THRESHOLD, False, bout_pub, cf, cfid, bout_writer)
 
 # 3. Create the Subscription THIRD
     # This Subscribes to the Sensor Readings on the /mox{cfid}/Sensor_reading Topic and uses the sensorCallback() Function to process the incoming data.
@@ -515,10 +515,12 @@ def run(node, cf, cfid, tf_buffer, cfname):
     finally:
         timer.cancel()
         logfile.close()
+        bout_logfile.close()
 
-"""HELPER FUNCTIONS"""
-# This checks if the supplied position lies within the defined bounds
 def isInBounds(pos, bounds):
+    """
+    Checks if the supplied position lies within the defined bounds.
+    """
     return (bounds[0][0] < pos[0] < bounds[1][0]) and (bounds[0][1] < pos[1] < bounds[1][1]) and (bounds[0][2] < pos[2] < bounds[1][2])
 
 def fetch_param_types(node, cfname):
@@ -590,14 +592,14 @@ def main(args=None):
     node = rclpy.create_node("crazyflie_distributed")
     node.get_logger().info("=== APF Agent Node Started ===")
     
-# Get CFID 
+# Get CFID[1/2/3/4] of the Agent[Drone]
     cfid_param = node.declare_parameter("cfid", 0).value
     try:
         cfid = int(cfid_param)    
     except (ValueError, TypeError):
         node.get_logger().error(f"Invalid cfid parameter: {cfid_param}. Defaulting to 0.")
         cfid = 0
-    
+
 # Get List of IDs and make sure it is a List and not a String
     crazyflies_ids_param = node.declare_parameter("crazyflies_ids", "[]").value
     try:
@@ -637,7 +639,7 @@ def main(args=None):
             "id": id_val,
             "initialPosition": crazyflies_positions[i]
         })
-    # DEBUG: Log complete crazyflies list
+    # Logs the Complete crazyflies List
     node.get_logger().info(f"DEBUG: The complete crazyflies List with IDs and Initial Positions: {crazyflies}")
 
 # Setting up TF and creating Crazyflie object
@@ -647,20 +649,21 @@ def main(args=None):
     cfname = None
     initial_position = None
 
-# Iterate through crazyflies List to match cfid with id in the crazyflies List
+# Iterate through crazyflies List[IDs and Initial Positions] to match CFID[1/2/3/4] of the Agent[Drone] with IDs in the crazyflies List
     for crazyflie in crazyflies:
         if int(crazyflie["id"]) == cfid:
             initial_position = crazyflie["initialPosition"]
             cfname = f"cf{cfid}"
-            # DEBUG: Log successful match
+            # Logs the Matched CFID[1/2/3/4] and its Initial Position
             node.get_logger().info(f"DEBUG: Match Found: Configured {cfname} with initial pos {initial_position}")
             break
-    # DEBUG: Log if cfid has No Match
+
     if cfname is None:
+        # Logs an Error if no Match is Found for the CFID[1/2/3/4] in the crazyflies List
         node.get_logger().error(f"CFID {cfid} not found in 'crazyflies_ids'. Available IDs: {[cf['id'] for cf in crazyflies]}")
         rclpy.shutdown()
         return
-    
+
 # Fetch Firmware Parameters from crazyflie_server.py
     paramTypeDict = fetch_param_types(node, cfname)
     node.get_logger().info(f"DEBUG: Fetched {len(paramTypeDict)} parameter types")
@@ -674,15 +677,21 @@ def main(args=None):
            rclpy.spin_once(node, timeout_sec=0.1)
 
        trans = tf_buffer.lookup_transform("map", cfname, rclpy.time.Time())
-       ts = trans.header.stamp
+       # ROS timestamp of when that position measurement was taken.
+       timestamp = trans.header.stamp
+       time_sec = timestamp.sec + (timestamp.nanosec / 1e9)
+       # The z coordinate, which represents the current height of the Agent[Drone].
+       x = trans.transform.translation.x
+       y = trans.transform.translation.y
        z = trans.transform.translation.z
-       node.get_logger().info(f"TF Connection Verified: Found transform for {cfname}")
+       node.get_logger().info(f"TF Connection Verified: {cfname} found at [x: {x:.2f}, y: {y:.2f}, z: {z:.2f}]" f"at timestamp {time_sec:.2f}s")
 
     except Exception as e:
         node.get_logger().warning(f"TF Warning: Transform for {cfname} not yet available: {e}")
 
 # Initialize Crazyflie Object
     cf = Crazyflie(node, cfname, paramTypeDict, tf_buffer)
+    # Logs the Crazyflie Object Creation
     node.get_logger().info(f"DEBUG: Crazyflie object created successfully")
     
 # Testing if Position() from crazyflie.py works [Remove after Testing]
@@ -701,7 +710,7 @@ def main(args=None):
     
 # Begin Execution 
     node.get_logger().info(f"Starting Control Loop for {cfname} Node")
-    run(node, cf, cfid, tf_buffer, cfname)
+    run(node, cf, cfid)
 
     rclpy.shutdown()
 
