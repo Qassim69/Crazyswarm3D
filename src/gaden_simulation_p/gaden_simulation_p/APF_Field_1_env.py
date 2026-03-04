@@ -27,15 +27,14 @@ from gaden_simulation_interfaces.msg import Bout
 from geometry_msgs.msg import Point
 
 """PARAMETERS"""
-D_MIN           = [0.05, 0.20]                  # [m] [obstacle, traffic]
-ROI             = [1.25, 1.0]                   # [m] radius of influence [obstacle, traffic, bout]
-DYNAMIC_KERNEL  = [0.15,0.7,0.15]
-MEASUREMENT_EPS = 0.10 # [m]
-B_PARTICLE_SIZE = 0.5 # [m]
-X_SOURCE        = np.array([0.75, 0.80, 0.75])          # [m]
-BOUNDS          = [[0.04,-0.10,0],[3.04,2.90,2.0]]      # [[min],[max]]; [m]
-RESOLUTION      = 0.10                                  # [m]
-UPDATE_RATE     = 10                                    # [1/s]
+D_MIN           = [0.05, 0.20]                          # Minimum Distance to start applying Repulsive Force [wall, traffic] [m]
+ROI             = [1.25, 1.0]                           # Radius of Influence [traffic, bout] [m]
+MEASUREMENT_EPS = 0.10                                  # [m]
+B_PARTICLE_SIZE = 0.5                                   # [m]
+X_SOURCE        = np.array([0.75, 0.80, 0.75])          # Position of Gas Source [m]
+BOUNDS          = [[0.04,-0.10,0],[3.04,2.90,2.0]]      # Size of the Environment [[min],[max]]; [m]
+RESOLUTION      = 0.10                                  # Size of each cell in the grid maps [m]
+UPDATE_RATE     = 10                                    # Hz
 
 TOPIC_PREFIX        = "GSL"
 BOUT_TOPIC          = f"{TOPIC_PREFIX}/bouts"
@@ -205,46 +204,47 @@ class TrafficServer:
         self.wall_k = 1 * wall_dmin**2 / (1/wall_dmin - 1/wall_dmax) 
 
     # A. This calculates Repulsive Forces for the requesting Agent[Drone] from Drones.
-    def getTrafficForce(self, ego_id=None, position=None):
+    def getTrafficForce(self, position, ego_id=-1):
         force = np.zeros(3)
         # Small threshold to avoid division by zero
         epsilon = 1e-6
-        if position is not None:
-            for i in range(self.traffic_n):
-                id = i+1
-                try:
-                    tf = self.tf.lookup_transform(WORLD_FRAME, CF_FRAME.format(id), RclpyTime())
-                    trans = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
-                except:
-                    continue   
+        # If ego_id is -1, skip calculating traffic forces
+        if position is None or ego_id == -1:
+            return force
+
+        # Loop through all other Agent[Drones], 1 to 4
+        for i in range(self.traffic_n):
+            id = i + 1
             
-                vector = trans - position
-                distance = np.linalg.norm(vector)
-                if distance < epsilon:  # Skip if agents are too close (avoids div by zero)
-                    continue
-
-                force_magnitude = -self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
-                force += (vector / distance) * force_magnitude
-        else:
-            positions = []
-            for i in range(self.traffic_n):
-                id = i+1
-                try:
-                    tf = self.tf.lookup_transform(CF_FRAME.format(ego_id), CF_FRAME.format(id), RclpyTime())
-                    trans = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
-                    positions.append(trans)
-                except:
-                    continue  
-
-                if id != ego_id:
-                    distance = np.linalg.norm(trans)
-                    u_distance = distance - 2*MEASUREMENT_EPS # measurement inaccuracy
-                    if u_distance < self.traffic_dmax:  # Skip if agents are too close (avoids div by zero)
-                        continue
-
-                    force_magnitude = (-0.5*(self.traffic_k*(1/u_distance - 1/self.traffic_dmax)/(u_distance**2))       # exponential term
-                                       -0.5*(1-(u_distance-self.traffic_dmin)/(self.traffic_dmax-self.traffic_dmin)))   # linear term
-                    force += (trans / distance) * force_magnitude
+            # Skip comparing the requesting Agent[Drone] with itself
+            if id == ego_id:
+                continue
+                
+            try:
+                # Look up the position of the other Agent[Drone] using TF.
+                tf = self.tf.lookup_transform(WORLD_FRAME, CF_FRAME.format(id), RclpyTime())
+                # Extract the translation components to get the position of the other Agent[Drone].
+                trans = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
+            except Exception:
+                continue   
+        
+            # Calculate the Direction vector from the requesting Agent[Drone] to the other Agent[Drone]
+            vector = trans - position
+            # Calculate the Magnitude between the requesting Agent[Drone] and the other Agent[Drone]
+            distance = np.linalg.norm(vector)
+            
+            # Apply the virtual bumper (measurement inaccuracy)
+            u_distance = distance - 2 * MEASUREMENT_EPS
+            
+            # Safety check: Prevent division by zero if drones physically overlap
+            if u_distance < epsilon:
+                continue
+                
+            # Push away if the other Agent[Drone] is less than the traffic_dmax(1.25m) from the requesting Agent[Drone].
+            if u_distance < self.traffic_dmax:
+                force_magnitude = (-0.5*(self.traffic_k*(1/u_distance - 1/self.traffic_dmax)/(u_distance**2))       # exponential term
+                                    -0.5*(1-(u_distance-self.traffic_dmin)/(self.traffic_dmax-self.traffic_dmin)))   # linear term
+                force += (trans / distance) * force_magnitude
     
         #buffer = force.copy()
         #force[0] += buffer[1] + buffer[2]   # Fx += Fy + Fz
@@ -260,7 +260,8 @@ class TrafficServer:
         # X-min boundary (left wall)
         distance = abs(position[0] - self.bounds[0][0]) - MEASUREMENT_EPS
         if distance < self.wall_dmax:
-            magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
+            magnitude = (0.75*self.wall_k*(1/distance - 1/self.wall_dmax)/(distance**2)
+                        +0.25*(1-distance-self.wall_dmin)/(self.wall_dmax-self.wall_dmin))
             force += np.array([1, 0, 0]) * magnitude
 
         # X-max boundary (right wall)
@@ -305,9 +306,9 @@ class TrafficServer:
         
         return force
 
-    def getForce(self, position, id=-1):
+    def getForce(self, position, ego_id=-1):
         """Returns combined wall and traffic force."""
-        return self.getWallForce(position) + self.getTrafficForce(id)
+        return self.getWallForce(position) + self.getTrafficForce(position, ego_id)
 
     def getMatrix(self, n, m, l, resolution):
         """

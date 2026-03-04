@@ -23,10 +23,10 @@ from geometry_msgs.msg import Point
 D_MIN               = [0.30, 0.5]    				# Minimum Distance to start applying Repulsive Force [wall, traffic] [m]
 ROI                 = [1, 3]                        # Radius of Influence [traffic, bout] [m]
 B_PARTICLE_SIZE     = 0.5                           # [m]
-X_SOURCE            = np.array([1.5, 3.0, 0.75])    # Posiotion of Gas Source [m]
+X_SOURCE            = np.array([1.5, 3.0, 0.75])    # Position of Gas Source [m]
 BOUNDS              = [[0,0,0],[10,6,2.6]]          # Size of the Environment [[min],[max]]; [m]
 RESOLUTION          = 0.10                          # Size of each cell in the grid maps [m]
-UPDATE_RATE         = 20                            # [1/s]
+UPDATE_RATE         = 20                            # Hz
 # DYNAMIC_KERNEL    = [0.1,0.8,0.1]                 # This is for 2D [getGaussianKernel()]
 
 TOPIC_PREFIX        = "GSL"
@@ -228,19 +228,19 @@ class TrafficServer:
         # X-min boundary (left wall)
         distance = abs(position[0] - self.bounds[0][0])
         if distance > epsilon and distance < self.wall_dmax:
-            magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
+            magnitude = self.wall_k * (1/distance - 1/self.wall_dmax) / (distance**2)
             force += np.array([1, 0, 0]) * magnitude
 
         # X-max boundary (right wall)
         distance = abs(position[0] - self.bounds[1][0])
         if distance > epsilon and distance < self.wall_dmax:
-            magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
+            magnitude = self.wall_k * (1/distance - 1/self.wall_dmax) / (distance**2)
             force += np.array([-1, 0, 0]) * magnitude
 
         # Y-min boundary (front wall)
         distance = abs(position[1] - self.bounds[0][1])
         if distance > epsilon and distance < self.wall_dmax:
-            magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
+            magnitude = self.wall_k * (1/distance - 1/self.wall_dmax) / (distance**2)
             force += np.array([0, 1, 0]) * magnitude
 
         # Y-max boundary (back wall)
@@ -252,13 +252,13 @@ class TrafficServer:
         # Z-min boundary (floor)
         distance = abs(position[2] - self.bounds[0][2])
         if distance > epsilon and distance < self.wall_dmax:
-            magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
+            magnitude = self.wall_k * (1/distance - 1/self.wall_dmax) / (distance**2)
             force += np.array([0, 0, +1]) * magnitude
 
         # Z-max boundary (ceiling)
         distance = abs(position[2] - self.bounds[1][2])
         if distance > epsilon and distance < self.wall_dmax:
-            magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
+            magnitude = self.wall_k * (1/distance - 1/self.wall_dmax) / (distance**2)
             force += np.array([0, 0, -1]) * magnitude
 	
         #buffer = force.copy()
