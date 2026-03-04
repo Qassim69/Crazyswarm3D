@@ -18,15 +18,8 @@ find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/Bout.msg"
   "msg/GenericLogData.msg"
-  "msg/MapMSG.msg"
-  "msg/StampedPosID.msg"
-  "msg/ValPos.msg"
-  "msg/ValPosStamped.msg"
   "srv/GetForces.srv"
-  "srv/GetForcesNew.srv"
-  "srv/GetValue.srv"
   DEPENDENCIES builtin_interfaces geometry_msgs std_msgs 
   ADD_LINTER_TESTS
 )
