@@ -33,9 +33,9 @@ def generate_launch_description():
             'controller': 'pid',  # or 'mellinger'
             'visualizations': {'rviz': {'enabled': True}
             },
-            'max_dt': 0.0005  # simulation timestep
+            'max_dt': 0.001  # Simulation Timestep, EARLIER: 0.0005
         },
-        'world_tf_name': 'world',  # default frame
+        'world_tf_name': 'world',  # Default Frame
 
         # Firmware params are nested under robot_types.default in your YAML
         'firmwareParams': cfrobot_params['robot_types']['default']['firmware_params'],
