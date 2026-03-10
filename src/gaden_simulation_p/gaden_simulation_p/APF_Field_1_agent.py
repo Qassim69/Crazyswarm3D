@@ -15,7 +15,7 @@ from std_msgs.msg import ColorRGBA
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 # ROS2 custom Messages and Services
-from gaden_simulation_interfaces.msg import GenericLogData
+from crazyflie_interfaces.msg import LogDataGeneric
 from gaden_simulation_interfaces.srv import GetForces
 # ROS2 crazyflies_server Parameter Services
 from rcl_interfaces.srv import ListParameters, DescribeParameters
@@ -171,7 +171,7 @@ def sensorCallback(node, msg, pkg):
     system_clock = Clock(clock_type=ClockType.SYSTEM_TIME)
     wall_time = system_clock.now().nanoseconds * 1e-9
     pos = cf.position()
-    sensorWriter.writerow([wall_time, *pos, *msg.values])
+    sensorWriter.writerow([wall_time,  msg.timestamp,*pos, *msg.values])
 
 """MOTION CONTROL & VISUALIZATION"""
 class MotionController:
@@ -481,7 +481,7 @@ def run(node, cf, cfid):
     logfile = open(sensorFile, 'w')
     sensorWriter = csv.writer(logfile) 
     # Heading of the File with Sensor Readings
-    sensorWriter.writerow(["Wall Time", "x(metres)", "y(metres)", "z(metres)", "Gas Conc. L", "Gas Conc. R"])
+    sensorWriter.writerow(["Wall Time", "Hardware Time (ms)","x(metres)", "y(metres)", "z(metres)", "Gas Conc. L", "Gas Conc. R"])
 
     # Logs Bout Reading for Left IR Sensors of a Drone cf{cfid}
     boutLoggerL = Logger(boutFile.format("L2"))
@@ -495,7 +495,7 @@ def run(node, cf, cfid):
 
 # 1. Create the Subscriber FIRST
     # This Subscribes to the Battery Readings on the /cf{cfid}/battery Topic and uses the batteryCheck() Function to process the incoming data.
-    node.create_subscription(GenericLogData, "/cf{}/battery".format(cfid), lambda msg: batteryCheck(msg, cf), 10)
+    node.create_subscription(LogDataGeneric, "/cf{}/battery".format(cfid), lambda msg: batteryCheck(msg, cf), 10)
     
 # 2. Create the Publisher SECOND
     # This only Publishes the Detected Bout Point on the GSL/bouts Topic.
@@ -507,7 +507,7 @@ def run(node, cf, cfid):
 
 # 4. Create the Subscription FOURTH
     # This Subscribes to the Sensor Readings on the /cf{}/sgp30 Topic and uses the sensorCallback() Function to process the incoming data.
-    node.create_subscription(GenericLogData,SENSOR_TOPIC.format(cfid),lambda msg: sensorCallback(node, msg, [bout_detector, cf, sensorWriter]),10)
+    node.create_subscription(LogDataGeneric,SENSOR_TOPIC.format(cfid),lambda msg: sensorCallback(node, msg, [bout_detector, cf, sensorWriter]),10)
 
 # 5. Initialize the MotionController Object FIFTH
     # This initializes the MotionController Object, which calculates the Velocity Commands based on the current Mode[Setpoint or Bout Point].
