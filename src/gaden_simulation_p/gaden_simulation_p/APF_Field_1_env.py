@@ -13,17 +13,13 @@ from rclpy.time import Time as RclpyTime
 from rclpy.clock import Clock, ClockType
 from tf2_ros import Buffer, TransformListener
 
-from builtin_interfaces.msg import Time as TimeMsg
-
 # Gausian Filtering Imports
 from scipy import ndimage			        # This is for 3D [gaussian_filter()]
 # from cv2 import getGaussianKernel		    # This is for 2D [getGaussianKernel()]
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 from gaden_simulation_interfaces.srv import GetForces
-from gaden_simulation_interfaces.msg import Bout
 from geometry_msgs.msg import Point
 
 """PARAMETERS"""
