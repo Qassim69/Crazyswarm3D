@@ -23,29 +23,29 @@ robots:
   cf4:
     cf_name: cf4
     id: 4
-    enabled: true
+    enabled: false
     type: default
     initial_position: [5.5, 0.5, 0.0]
-    
+
 robot_types:
   default:
     connection: "crazyflie"
     bigQuad: False
-    batteryVoltageWarning: 3.8  # V
-    batteryVoltageCritical: 3.7 # V
-    markerConfiguration: 0 # change to 3 for single marker tracking
+    batteryVoltageWarning: 3.8          # V
+    batteryVoltageCritical: 3.7         # V
+    markerConfiguration: 0              # Change to 3 for single marker tracking
     dynamicsConfiguration: 0
     firmware_params:
       commander:
         enHighLevel: 1
       stabilizer:
-        estimator: 2 # 1: complementary, 2: kalman
-        controller: 1 # 1: PID, 2: mellinger
+        estimator: 2                    # 1: complementary, 2: kalman
+        controller: 1                   # 1: PID, 2: mellinger
       ring:
-        effect: 7 # 6: double spinner, 7: solid color, 16: packetRate
-        solidBlue: 255 # if set to solid color
-        solidGreen: 0 # if set to solid color
-        solidRed: 0 # if set to solid color
+        effect: 7                       # 6: double spinner, 7: solid color, 16: packetRate
+        solidBlue: 255                  # if set to 7: solid color
+        solidGreen: 0                   # if set to 7: solid color
+        solidRed: 0                     # if set to 7: solid color
         headlightEnable: 0
       locSrv:
         extPosStdDev: 1e-3
