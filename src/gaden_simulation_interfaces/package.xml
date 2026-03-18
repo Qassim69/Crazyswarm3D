@@ -3,13 +3,9 @@
 <package format="3">
   <name>gaden_simulation_interfaces</name>
   <version>0.0.0</version>
-  <description>This package is the simulation interface to manage msg and srv for swarm coordination.</description>
+  <description>This package is the simulation interface to manage srv for swarm coordination.</description>
   <maintainer email="qassimgazi06@gmail.com">qas</maintainer>
   <license>MIT</license>
-  
-  <depend>builtin_interfaces</depend>
-  <depend>geometry_msgs</depend>
-  <depend>std_msgs</depend>
   
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
