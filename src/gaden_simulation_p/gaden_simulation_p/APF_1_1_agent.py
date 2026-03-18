@@ -5,25 +5,28 @@ Artificial Potential Field Agent
 NOTE: the Mellinger controller is Crazyswarm's default controller, but it has not been tuned (or even tested) for velocity control mode.
       Switch to the PID controller by changing`firmwareParams.stabilizer.controller` to `1` in your launch file.
 """
-import numpy as np
-import rclpy
-import csv
+# Standard Library
 import ast
-# ROS2 Imports
+import csv
+
+# Third-Party
+import numpy as np
+
+# ROS2 Core
+import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
 from tf2_ros import Buffer, TransformListener
-# ROS2 Messages
+
+# ROS2 Message & Service
 from std_msgs.msg import ColorRGBA
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point
-# ROS2 Custom Services
-from gaden_simulation_interfaces.srv import GetForces
-# ROS2 Custom Messages
 from olfaction_msgs.msg import GasSensor
-# ROS2 crazyflies_server Parameter Services
 from rcl_interfaces.srv import ListParameters, DescribeParameters
 from rcl_interfaces.msg import ParameterType
+from geometry_msgs.msg import Point
+from gaden_simulation_interfaces.srv import GetForces
+
 # Crazyflie Python API
 from crazyflie_py.crazyflie import Crazyflie
 
@@ -46,7 +49,7 @@ BOUT_THRESHOLD      =   200     	# bout amplitude threshold for noise reduction
 TAU                 =   0.5     	# halflife for emwa smoothing of x and its derivatives [s]
 
 PREFIX              = "GSL"
-BOUT_TOPIC          = f"{PREFIX}/bouts"
+BOUT_TOPIC          = f"{PREFIX}/bouts/cf{{}}"
 SENSOR_TOPIC        = "/mox{}/Sensor_reading"
 GETFORCES_SERVICE   = f"{PREFIX}/GetForces"
 CF                  = "/cf{}"
@@ -467,12 +470,12 @@ def run(node, cf, cfid):
     # File for Bout Points
     bout_logfile = open(f"log/GSL/CFSim/Bout/Bouts_{time_sec:.4f}_cf{cfid}.csv", "w")
     bout_writer = csv.writer(bout_logfile)
-    bout_writer.writerow(["ROS Time", "CFID", "Bout_X(metres)", "Bout_Y(metres)", "Bout_Z(metres)", "Gas Conc."]) 
-
+    bout_writer.writerow(["ROS Time", "CFID", "Bout_X(metres)", "Bout_Y(metres)", "Bout_Z(metres)", "Gas Conc."])
 
 # 1. Create the Publisher FIRST
-    # This only Publishes the Detected Bout Point on the GSL/bouts Topic.
-    bout_pub = node.create_publisher(Point, BOUT_TOPIC, 10)
+    # This only Publishes the Detected Bout Point on the GSL/bouts/cf(1,2,3,4) Topic.
+    bout_topic = BOUT_TOPIC.format(cfid)
+    bout_pub = node.create_publisher(Point, bout_topic, 10)
 
 # 2. Initialize the BoutDetector Object SECOND
     # This initializes the BoutDetector Object, which applies the Bout Detection Logic on the Sensor Readings and uses bout_pub to Publish the Detected Bout Point.
