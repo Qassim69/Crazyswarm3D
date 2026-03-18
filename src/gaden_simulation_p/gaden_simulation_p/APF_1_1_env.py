@@ -2,22 +2,30 @@
 """
 Artificial Potential Field Environment
 """
+# Standard Library Imports
+import ast
 import os
+
+# Third-Party Imports
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+from scipy import ndimage			        # This is for 3D [gaussian_filter()]
+
+# ROS2 Core Imports
 import rclpy
-# ROS2 Imports
 from rclpy.node import Node
 from rclpy.time import Time as RclpyTime
 from tf2_ros import Buffer, TransformListener
-# Gausian Filtering Imports
-from scipy import ndimage			        # This is for 3D [gaussian_filter()]
-# from cv2 import getGaussianKernel		    # This is for 2D [getGaussianKernel()]
-# Python Visualization Imports
-import matplotlib.pyplot as plt
-# ROS2 Custom Services
-from gaden_simulation_interfaces.srv import GetForces
-# ROS2 Messages
+
+from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup    # ← NEW
+from rclpy.executors import MultiThreadedExecutor                                           # ← NEW
+
+# ROS2 Message & Service Imports
 from geometry_msgs.msg import Point
+from gaden_simulation_interfaces.srv import GetForces
 
 """PARAMETERS"""
 D_MIN               = [0.30, 0.5]    				# Minimum Distance to start applying Repulsive Force [wall, traffic] [m]
@@ -27,100 +35,213 @@ X_SOURCE            = np.array([1.5, 3.0, 0.75])    # Position of Gas Source [m]
 BOUNDS              = [[0,0,0],[10,6,2.6]]          # Size of the Environment [[min],[max]]; [m]
 RESOLUTION          = 0.10                          # Size of each cell in the grid maps [m]
 UPDATE_RATE         = 20                            # Hz
-# DYNAMIC_KERNEL    = [0.1,0.8,0.1]                 # This is for 2D [getGaussianKernel()]
 
 TOPIC_PREFIX        = "GSL"
-BOUT_TOPIC          = f"{TOPIC_PREFIX}/bouts"
+BOUT_TOPIC          = f"{TOPIC_PREFIX}/bouts/cf{{}}"
 SERVICE_NAME        = f"{TOPIC_PREFIX}/GetForces"
 CF_FRAME            = "cf{}"
 WORLD_FRAME         = "map"
 
-def draw(fig, ax, attraction):
-    ax.clear()
-    
-    # Define grid dimensions for visualization (adjust as needed for performance)
-    n, m, l = 10, 6, 4  # Grid resolution in x, y, z
-    res = RESOLUTION
-    
-    # Get the 3D force matrix (shape: (3, n, m, l))
-    forces = attraction.getMatrix(n, m, l, res)
-    
-    # Create 3D meshgrid for quiver positions
-    X, Y, Z = np.meshgrid(np.linspace(0, n * res, n),
-                          np.linspace(0, m * res, m),
-                          np.linspace(0, l * res, l),
-                          indexing='ij')
-    
-    # Plot 3D quiver (vectors normalized for clarity)
-    ax.quiver(X, Y, Z, forces[0], forces[1], forces[2], length=0.1, normalize=True)
-    # Scatter the source point
-    ax.scatter(*X_SOURCE, color='red', s=30)
-    
-    # Set 3D axis labels and limits
-    ax.set_xlim(0, n * res)
-    ax.set_ylim(0, m * res)
-    ax.set_zlim(0, l * res)
-    ax.set_xlabel("x [0.1 m]")
-    ax.set_ylabel("y [0.1 m]")
-    ax.set_zlabel("z [0.1 m]")
-    ax.set_title("3D Force Field")
-    
-    # Update the canvas non-blockingly
-    fig.canvas.draw()
-    fig.canvas.flush_events()
+def run(node, tf_buffer, executor, drone_ids):
+    service_cb_group = ReentrantCallbackGroup()               # ← NEW
+    timer_cb_group = MutuallyExclusiveCallbackGroup()         # ← NEW
 
-def run(node, tf_buffer):
-    # Create instances of TrafficServer to calculate Repulsive Forces from Walls and Drones.
-    traffic = TrafficServer(node, BOUNDS, D_MIN[0], D_MIN[1], 1.0, ROI[0], 4, tf_buffer)
+    # Create instance of TrafficServer to calculate Repulsive Forces from Walls and Drones.
+    traffic = TrafficServer(node, BOUNDS, D_MIN[0], D_MIN[1], 1.0, ROI[0], drone_ids, tf_buffer)
+    # Create instance of MapSnaps to generate 2D and 3D Maps
+    snaps = MapSnaps(node, BOUNDS, RESOLUTION, B_PARTICLE_SIZE, tf_buffer, drone_ids)
     # Create instance of BoutMap to calculate Attractive Forces towards Bouts.
-    bout = BoutMap(node, BOUNDS, RESOLUTION, ROI[1], BOUT_TOPIC, B_PARTICLE_SIZE, 1)  
+    bout = BoutMap(node, BOUNDS, RESOLUTION, ROI[1], BOUT_TOPIC, B_PARTICLE_SIZE, 1, snaps, drone_ids)  
     # Create instance of GetForcesServer to handle service Requests for combined(Repulsion + Attraction) Forces.
-    getForcesServer = GetForcesServer(node, SERVICE_NAME, traffic, bout, tf_buffer)
-
-    # Visualization
-    plt.ion()
-    fig_bout, axs_bout = plt.subplots(1, 3, figsize=(15, 5))
-    axs_bout[2] = fig_bout.add_subplot(133, projection='3d')  # Make third subplot 3D
-    
-    # Separate visualization setup for the main 3D force field (as in original draw)
-    fig_main = plt.figure()
-    ax_main = fig_main.add_subplot(111, projection='3d')
-    ax_main.set_title("3D Force Field")
-    
-    counter = [0]	 # Initialize counter for visualization updates
+    getForcesServer = GetForcesServer(node, SERVICE_NAME, traffic, bout, tf_buffer, service_cb_group)       # ← NEW
 
     def timer_callback():
         node.get_logger().debug("Bout update")
         bout.update()
 
-        # Visualization logic
-        counter[0] += 1
-        if counter[0] >= 10:
-            # Call BoutMap's plot for detailed subplots
-            bout.plot(axs_bout)
-            fig_bout.canvas.draw()
-            fig_bout.canvas.flush_events()
-
-            # Call original draw for main 3D force field (using bout as attraction)
-            draw(fig_main, ax_main, bout)
-
-            counter[0] = 0
-
     # Create a Timer for periodic updates (every 1/UPDATE_RATE seconds[0.05s])
     timer_period = 1.0 / UPDATE_RATE
-    timer = node.create_timer(timer_period, timer_callback)
+    timer = node.create_timer(timer_period, timer_callback, callback_group=timer_cb_group)      # ← NEW
 
     # Spin the node to process callbacks, subscriptions, and services
-    rclpy.spin(node)
+    executor.spin()
+    # rclpy.spin(node)
+
+class MapSnaps:
+    """
+    Generates 2D and 3D Plots for Visualising the Bout Point's Position for Testing how close it is to the Actual Gas Source.
+    """
+    def __init__(self, node, bounds, resolution, particle_size, tf_buffer, drone_ids):
+        self.node = node
+        # The 3D physical boundaries of the environment [[min], [max]]
+        self.bounds = bounds
+        # Size of each cell in the grid maps
+        self.resolution = resolution
+        self.tf = tf_buffer
+        # List of drone IDs in the swarm
+        self.drone_ids = drone_ids
+        self.SPATIAL_THRESHOLD = particle_size
+
+        # Throttling state
+        self.last_bout_pos = None
+        self.last_bout_time = 0.0
+        self.TEMPORAL_THRESHOLD = 2.0
+
+        self.map_dir = "log/GSL/CFSim/Maps"
+
+    def should_throttle(self, bout_pos):
+        """
+        This Function is to check the Time Difference and Bout Position between 2 Bout Points in order to avoid 
+        generating Multiple 2D and 3D Plots and saving to the Map Folder.
+        """
+        # Simulation Time in seconds
+        bout_time = self.node.get_clock().now().nanoseconds / 1e9
+        
+        if self.last_bout_pos is not None:
+            dist = np.linalg.norm(bout_pos - self.last_bout_pos)
+            time_diff = bout_time - self.last_bout_time
+            if dist < self.SPATIAL_THRESHOLD and time_diff < self.TEMPORAL_THRESHOLD:
+                return True
+        return False
+
+    def trigger_snap(self, pos, drone_name, diffused_grid):
+        """
+        Based on the should_throttle() Function the 2D and 3D Maps will be generated for the Drone that detected the Bout.
+        """
+        if self.should_throttle(pos):
+            self.node.get_logger().debug(f"SnapShot from {drone_name} throttled.")
+            return
+
+        self.last_bout_pos = pos.copy()
+        self.last_bout_time = self.node.get_clock().now().nanoseconds / 1e9
+
+        self.node.get_logger().info(f"Generating Maps for {drone_name} at Z={pos[2]:.2f}m")
+        self.save_maps(pos, drone_name, diffused_grid)
+
+    def save_maps(self, pos, drone_name, diffused_grid):
+        """
+        This Function generates the 2D and 3D Maps with well defined Visualisation Tools.
+        """
+        try:
+            drone_positions = {}
+            for i in self.drone_ids:
+                try:
+                    tf = self.tf.lookup_transform(WORLD_FRAME, CF_FRAME.format(i), RclpyTime())
+                    drone_positions[f"cf{i}"] = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
+                except Exception as e:
+                    self.node.get_logger().debug(f"TF lookup failed for cf{i}: {e}")
+
+            # Create a Blank Canvas of size 14x14 inches
+            fig = plt.figure(figsize=(14, 14))
+
+        # 2D MAP (Heatmap of Bout)
+            # Create a 2D Map on the Left side of the 14x6 inches Blank Canvas[1: row, 2: columns, position 1]
+            map_2d = fig.add_subplot(1, 2, 1)
+            
+            # Find closest Z index to the bout height
+            z_idx = int(pos[2] / self.resolution)
+            grid_depth = diffused_grid.shape[2]
+            z_idx = max(0, min(grid_depth - 1, z_idx))
+            
+            # Extract the 2D cross section from the actual physics grid
+            slice_2d = diffused_grid[:, :, z_idx].T
+            
+            # This generates the 2D Heatmap. extent: Defines the 2D Plot Size as the Room Size 
+            cax = map_2d.imshow(
+                slice_2d, 
+                origin='lower', 
+                extent=[self.bounds[0][0], self.bounds[1][0], self.bounds[0][1], self.bounds[1][1]], 
+                cmap='viridis'
+            )
+            # Draw the Latest Bout Position as red 'x' on the 2D Heatmap
+            map_2d.scatter(pos[0], pos[1], color='red', marker='x', s=100, label='Latest Bout')
+            map_2d.set_title(f"2D Gas Spread at Height: {pos[2]:.2f}m\n(Detected by {drone_name})")
+            map_2d.set_xlabel("X [m]")
+            map_2d.set_ylabel("Y [m]")
+            map_2d.legend()
+            fig.colorbar(cax, ax=map_2d, fraction=0.046, pad=0.04, label="Gas Concentration")
+
+        # 3D MAP (Volumetric Scatter)
+            # Create a 3D Map on the Right side of the 14x14 inches Blank Canvas[1: row, 2: columns, position 2]
+            map_3d = fig.add_subplot(1, 2, 2, projection='3d')
+            
+            z_floor = self.bounds[0][2]
+            x_wall = self.bounds[0][0]
+            rad = self.SPATIAL_THRESHOLD / 2.0  
+            
+            # Creates Sphere in the 3D Plot around the Bout Point
+            u_longitude = np.linspace(0, 2 * np.pi, 20)
+            v_latitude = np.linspace(0, np.pi, 10)
+            x_sphere = pos[0] + rad * np.outer(np.cos(u_longitude), np.sin(v_latitude))
+            y_sphere = pos[1] + rad * np.outer(np.sin(u_longitude), np.sin(v_latitude))
+            z_sphere = pos[2] + rad * np.outer(np.ones_like(u_longitude), np.cos(v_latitude))
+            
+            # This generates a Wireframe of a Sphere
+            map_3d.plot_wireframe(x_sphere, y_sphere, z_sphere, color='orange', alpha=0.3)
+
+            bout_label = f"Bout [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]"
+            # Marks a Point to represent a Bout in the 3D Map
+            map_3d.scatter(pos[0], pos[1], pos[2], color='black', marker='o', s=70, depthshade=False, label=bout_label)
+
+            # Creates a Line from the Bout Point to the Z-Plane and X-Plane
+            map_3d.plot([pos[0], pos[0]], [pos[1], pos[1]], [z_floor, pos[2]], color='black', linestyle='--', alpha=0.5)
+            map_3d.plot([x_wall, pos[0]], [pos[1], pos[1]], [pos[2], pos[2]], color='black', linestyle='--', alpha=0.5)
+
+            # Draw Locked Drone Positions
+            colors = ['red', 'blue', 'orange', 'purple']
+            for d_name, d_pos in drone_positions.items():
+                idx = int(d_name.replace("cf", "")) - 1
+                c = colors[idx % len(colors)]
+                
+                drone_label = f"{d_name} [{d_pos[0]:.2f}, {d_pos[1]:.2f}, {d_pos[2]:.2f}]"
+                # Marks a Triangle to represent Drone's Position in the 3D Map
+                map_3d.scatter(d_pos[0], d_pos[1], d_pos[2], color=c, marker='^', s=100, label=drone_label)
+                
+                # Creates a Line from each Triangle(Drone) to the Z-Plane
+                map_3d.plot([d_pos[0], d_pos[0]], [d_pos[1], d_pos[1]], [z_floor, d_pos[2]], color=c, linestyle='--', alpha=0.5)
+
+            # Format each Grid Line in X,Y,Z Axis
+            map_3d.xaxis.set_major_locator(ticker.MultipleLocator(0.5))
+            map_3d.yaxis.set_major_locator(ticker.MultipleLocator(0.5))
+            map_3d.zaxis.set_major_locator(ticker.MultipleLocator(0.5))
+            map_3d.grid(which='major', color='gray', linestyle='-', linewidth=0.5, alpha=0.5)
+            # Rotates the Tick in X,Y Axis
+            map_3d.tick_params(axis='x', labelrotation=45)
+            map_3d.tick_params(axis='y', labelrotation=-35)
+            
+            # 3D Limits and Labels
+            map_3d.set_xlim(self.bounds[0][0], self.bounds[1][0])
+            map_3d.set_ylim(self.bounds[0][1], self.bounds[1][1])
+            map_3d.set_zlim(self.bounds[0][2], self.bounds[1][2])
+            map_3d.set_title("3D Bout Position")
+            map_3d.set_xlabel("X [m]")
+            map_3d.set_ylabel("Y [m]")
+            map_3d.set_zlabel("Z [m]")
+            
+            # Clean Legend & Push Outside
+            handles, labels = map_3d.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            map_3d.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1.05, 0.5))
+
+        # Save Images to the Map Folder
+            plt.tight_layout()
+            time_sec = self.node.get_clock().now().nanoseconds / 1e9
+            filename = os.path.join(self.map_dir, f"Map_{time_sec:.4f}_{drone_name}_Z{pos[2]:.2f}m.png")
+            
+            plt.savefig(filename, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+        except Exception as e:
+            self.node.get_logger().error(f"Failed to generate 2D and 3D Map: {e}")
 
 class GetForcesServer:
     """
     ROS2 Service Server that computes and returns the combined repulsive 
     and attractive forces for requesting Agent[Drone] based on TF data.
     """
-    def __init__(self, node, name, traffic, bout, tf_buffer):
+    def __init__(self, node, name, traffic, bout, tf_buffer, callback_group=None):      # ← NEW
         self.node = node
-        self.service = node.create_service(GetForces, name, self.handleGetForces)
+        self.service = node.create_service(GetForces, name, self.handleGetForces, callback_group=callback_group)        # ← NEW
         # The TrafficServer instance to calculate Repulsive Forces from Walls and Drones.
         self.traffic = traffic
         # The BoutMap instance to calculate Attractive Forces towards Bouts.
@@ -151,7 +272,7 @@ class TrafficServer:
     """
     Calculates Repulsive Forces from Wall Boundaries and other Agents[Drones] in the environment.
     """
-    def __init__(self, node, bounds, wall_dmin, traffic_dmin, wall_dmax, traffic_dmax, traffic_n, tf_buffer):
+    def __init__(self, node, bounds, wall_dmin, traffic_dmin, wall_dmax, traffic_dmax, traffic_ids, tf_buffer):
         self.node = node
         # Size of the Room 
         self.bounds = bounds
@@ -163,8 +284,8 @@ class TrafficServer:
         self.traffic_dmin = traffic_dmin
         # Maximum Distance to apply Repulsive Force from other Drones. Beyond this, no force is applied.
         self.traffic_dmax = traffic_dmax
-        # Number of Drones in the environment to consider for Repulsive Forces.
-        self.traffic_n = traffic_n
+        # List of Drone IDs in the environment to consider for Repulsive Forces.
+        self.traffic_ids = traffic_ids
         # TF Buffer for looking up Drone positions.
         self.tf = tf_buffer
 
@@ -175,17 +296,16 @@ class TrafficServer:
         self.wall_k = 1 * wall_dmin**2 / (1/wall_dmin - 1/wall_dmax)  
 	
     # A. This calculates Repulsive Forces for the requesting Agent[Drone] from Drones.
-    def getTrafficForce(self, position, ego_id=-1):
+    def getTrafficForce(self, ego_position, ego_id=-1):
         force = np.zeros(3)
         # Small threshold to avoid division by zero
         epsilon = 1e-6
         # If ego_id is -1, skip calculating traffic forces
-        if position is None or ego_id == -1:
+        if ego_position is None or ego_id == -1:
             return force
 
-        # Loop through all other Agent[Drones], 1 to 4
-        for i in range(self.traffic_n):
-            id = i + 1
+        # Loop through all other Agent[Drones]
+        for id in self.traffic_ids:
 
             # Skip comparing the requesting Agent[Drone] with itself
             if id == ego_id:
@@ -195,13 +315,13 @@ class TrafficServer:
                 # Look up the position of the other Agent[Drone] using TF.
                 tf = self.tf.lookup_transform(WORLD_FRAME, CF_FRAME.format(id), RclpyTime())
                 # Extract the translation components to get the position of the other Agent[Drone].
-                trans = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
+                other_position = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
             
             except Exception:
                 continue
             
             # Calculate the Direction vector from the requesting Agent[Drone] to the other Agent[Drone]
-            vector = trans - position
+            vector = other_position - ego_position
             # Calculate the Magnitude between the requesting Agent[Drone] and the other Agent[Drone]
             distance = np.linalg.norm(vector)
             if distance < epsilon:
@@ -210,7 +330,7 @@ class TrafficServer:
             # Push away if the other Agent[Drone] is less than the traffic_dmax(1m) from the requesting Agent[Drone].
             if distance < self.traffic_dmax:
                 force_magnitude = -self.traffic_k * (1/distance - 1/self.traffic_dmax) / (distance**2)
-                force += (trans / distance) * force_magnitude
+                force += (vector / distance) * force_magnitude
     
         # buffer = force.copy()
         # force[0] += buffer[1] + buffer[2]   # Fx += Fy + Fz
@@ -246,7 +366,7 @@ class TrafficServer:
         # Y-max boundary (back wall)
         distance = abs(position[1] - self.bounds[1][1])
         if distance > epsilon and distance < self.wall_dmax:
-            magnitude = self.traffic_k*(1/distance - 1/self.traffic_dmax)/(distance**2)
+            magnitude = self.wall_k * (1/distance - 1/self.wall_dmax) / (distance**2)
             force += np.array([0, -1, 0]) * magnitude
         
         # Z-min boundary (floor)
@@ -271,65 +391,6 @@ class TrafficServer:
     def getForce(self, position, ego_id=-1):
         """Returns the combined Forces [Repulsion from Walls + Repulsion from Drones] for a given Position and Agent[Drone] ID."""
         return self.getWallForce(position) + self.getTrafficForce(position, ego_id)
-
-    def getMatrix(self, n, m, l, resolution):
-        """
-        Generate a 3D matrix of force vectors sampled across a voxel grid.
-        Args:
-            n (int): number of grid cells in X
-            m (int): number of grid cells in Y
-            l (int): number of grid cells in Z
-            resolution (float): size of each voxel
-        
-        Returns:
-            np.ndarray: a 4D array of shape (3, n, m, l) where each [i,j,k] stores a 3D force vector.
-        """
-        grid = np.mgrid[0:n, 0:m, 0:l] * resolution + resolution / 2
-        matrix = np.zeros((3, n, m, l))
-        
-        for i in range(n):
-            for j in range(m):
-                for k in range(l):
-                    pos = np.array([grid[0, i, j, k], grid[1, i, j, k], grid[2, i, j, k]])
-                    force_vec = self.getForce(pos)
-                    matrix[:, i, j, k] = force_vec
-        
-        return matrix
-
-    def plot(self, axs, n, m, l, resolution):
-        """
-        Renders a 3D slice visualization of the traffic forces.
-        """
-    # 1. Prepare Data
-        matrix = self.getMatrix(n, m, l, resolution)
-        mid_z = l // 2
-        
-        X, Y = np.meshgrid(
-            np.linspace(0, n * resolution, n), 
-            np.linspace(0, m * resolution, m)
-        )
-        Z = np.full_like(X, mid_z * resolution)
-
-    # 2. Prepare Axis
-        axs.cla() 
-        
-    # 3. Plot Elements
-        axs.quiver(
-            X, Y, Z,
-            matrix[0, :, :, mid_z],
-            matrix[1, :, :, mid_z],
-            matrix[2, :, :, mid_z],
-            length=0.1, normalize=True
-        )
-
-    # 4. Format Axes
-        axs.set_xlim(0, n * resolution)
-        axs.set_ylim(0, m * resolution)
-        axs.set_zlim((mid_z - 1) * resolution, (mid_z + 1) * resolution)
-        axs.set_xlabel('X (m)')
-        axs.set_ylabel('Y (m)')
-        axs.set_zlabel('Z (m)')
-        axs.set_title('Traffic Force Field (Middle Z Slice, 3D)')
 
 class MapServer:
     """
@@ -446,96 +507,54 @@ class BoutMap (MapServer):
     Subclass of MapServer specifically tailored to handle attractive goals or 'bouts'.
     Subscribes to point messages to update internal maps dynamically.
     """
-    def __init__(self, node, bounds, resolution, roi, topic, particle_size, particle_value=1):
+    def __init__(self, node, bounds, resolution, roi, topic, particle_size, particle_value, snaps, drone_ids):
         super().__init__(bounds, resolution, roi)
         self.node = node
-        # This Subscribes to 'GSL/bouts' when APF_1_1_agent.py Publishes a Bout Point, handleInput drops a new Attractive Force Particle onto the 3D grid
-        self.subscriber = node.create_subscription(Point, topic, self.handleInput, 10)
-        
         self.particle_size = particle_size
-        self.particle_value = particle_value 
+        self.particle_value = particle_value
+        self.snaps = snaps
+        
+        # This Subscribes to 'GSL/bouts/cf' when APF_1_1_agent.py Publishes a Bout Point, handleInput drops a new Attractive Force Particle onto the 3D grid
+        self.subscribers = []
+        for i in drone_ids:
+            drone_name = f"cf{i}"
+            topic = BOUT_TOPIC.format(i)
+            sub = node.create_subscription(Point, topic, lambda msg, dn=drone_name: self.handleInput(msg, dn), 10)
+            self.subscribers.append(sub)
 
-    def handleInput(self, msg):
+    def handleInput(self, msg, drone_name):
         """Callback to add new sources (bouts) based on incoming messages."""
-        self.addParticle([msg.x, msg.y, msg.z], self.particle_size, self.particle_value)
+        pos = np.array([msg.x, msg.y, msg.z])
+        self.addParticle(pos, self.particle_size, self.particle_value)
         self.base = ndimage.gaussian_filter(self.base, sigma=self.sigma, mode="constant", cval=0)
-    
+        
+        # NEW: Update the 3D blur grid immediately before taking the Snap
+        self.diffuse()
+
+        self.snaps.trigger_snap(pos, drone_name, self.diffused)
+
     def update(self):
         """Processes the physics layers frame-by-frame."""
         self.diffuse()
         self.differentiate()
         self.vortexize(1)
         self.normalize()
-
-    def getMatrix(self, n, m, l, resolution):
-        """Fetches the 3D grid representation of the force field."""
-        grid = np.mgrid[0:n, 0:m, 0:l] * resolution + resolution / 2.0
-        matrix = np.zeros((3, n, m, l))
-        
-        for i in range(n):
-            for j in range(m):
-                for k in range(l):
-                    pos = np.array([grid[0, i, j, k], grid[1, i, j, k], grid[2, i, j, k]])
-                    force_vec = self.getForce(pos)
-                    matrix[:, i, j, k] = force_vec
-        return matrix
-        
-    def plot(self, axs):
-        """
-        Renders detailed diagnostic views of the BoutMap across 3 subplots.
-        axs[0]: Base map
-        axs[1]: Diffused map
-        axs[2]: 3D Force Field
-        """
-        # Middle Z plane for 2D visualizations
-        mid_z = self.l // 2
-        
-    # 1. Raw Concentration (Base Map)
-        axs[0].cla()
-        
-        # Plot and label
-        axs[0].matshow(self.base[:, :, mid_z].T, origin='lower')
-        peak_base = np.unravel_index(np.argmax(self.base[:, :, mid_z]), self.base[:, :, mid_z].shape)
-        axs[0].scatter(*peak_base, c="lime")
-        axs[0].set_title("Base Map (mid-Z)")
-        
-    # 2. Diffused Concentration
-        axs[1].cla()
-        
-        # Plot and label
-        axs[1].matshow(self.diffused[:, :, mid_z].T, origin='lower')
-        peak_diff = np.unravel_index(np.argmax(self.diffused[:, :, mid_z]), self.diffused[:, :, mid_z].shape)
-        axs[1].scatter(*peak_diff, c="lime")
-        axs[1].set_title("Diffused Map (mid-Z)")
-        
-    # 3. Full 3D Force Field
-        axs[2].cla()
-        
-        # Setup Grid
-        X, Y = np.meshgrid(np.arange(self.n), np.arange(self.m))
-        Z = np.full_like(X, mid_z)
-        
-        # Plot Quiver Elements
-        axs[2].quiver(
-            X, Y, Z,
-            self.forces[0, :, :, mid_z].T,
-            self.forces[1, :, :, mid_z].T,
-            self.forces[2, :, :, mid_z].T,
-            length=0.1, normalize=True
-        )
-        
-        # Set limits and labels
-        axs[2].set_xlim(0, self.n)
-        axs[2].set_ylim(0, self.m)
-        axs[2].set_zlim(mid_z - 1, mid_z + 1)
-        axs[2].set_xlabel('X')
-        axs[2].set_ylabel('Y')
-        axs[2].set_zlabel('Z')
-        axs[2].set_title("Bout Force Field (mid-Z, 3D)")
         
 def main(args=None):
     rclpy.init(args=args)
     node = Node("GSL_MapServer")
+
+    # Extract No. of Drones from Launch file
+    node.declare_parameter('drone_ids', [1, 2, 3, 4])
+    drone_ids_param = node.get_parameter('drone_ids').value
+    if isinstance(drone_ids_param, str):
+        try:
+            drone_ids = ast.literal_eval(drone_ids_param)
+        except Exception as e:
+            node.get_logger().error(f"Failed to parse drone_ids string: {e}")
+            drone_ids = [1, 2, 3, 4]
+    else:
+        drone_ids = drone_ids_param
 
     # Debug environment info
     node.get_logger().info(f"PYTHONPATH: {os.environ.get('PYTHONPATH')}")
@@ -545,9 +564,13 @@ def main(args=None):
     tf_buffer = Buffer()
     tf_listener = TransformListener(tf_buffer, node)
     
+    executor = MultiThreadedExecutor(num_threads=4)           # ← NEW
+    executor.add_node(node)                                   # ← NEW
+
     try:
-        run(node, tf_buffer)
+        run(node, tf_buffer, executor, drone_ids)             # ← NEW
     finally:
+        executor.shutdown()                                   # ← NEW
         node.destroy_node()
         rclpy.shutdown()
 
