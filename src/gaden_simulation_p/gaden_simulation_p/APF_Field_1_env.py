@@ -2,23 +2,24 @@
 """
 Artificial Potential Field Environment
 """
+
+# Standard Library Imports
+import ast
 import os
+
+# Third-Party Imports
 import numpy as np
-import rclpy
-import time
 import csv
-# ROS2 Imports
+from scipy import ndimage			        # This is for 3D [gaussian_filter()]
+
+# ROS2 Core Imports
+import rclpy
 from rclpy.node import Node
 from rclpy.time import Time as RclpyTime
-from rclpy.clock import Clock, ClockType
 from tf2_ros import Buffer, TransformListener
+from rclpy.clock import Clock, ClockType
 
-# Gausian Filtering Imports
-from scipy import ndimage			        # This is for 3D [gaussian_filter()]
-# from cv2 import getGaussianKernel		    # This is for 2D [getGaussianKernel()]
-
-import matplotlib.pyplot as plt
-
+# ROS2 Message & Service Imports
 from gaden_simulation_interfaces.srv import GetForces
 from geometry_msgs.msg import Point
 
@@ -33,53 +34,12 @@ RESOLUTION      = 0.10                                  # Size of each cell in t
 UPDATE_RATE     = 10                                    # Hz
 
 TOPIC_PREFIX        = "GSL"
-BOUT_TOPIC          = f"{TOPIC_PREFIX}/bouts"
+BOUT_TOPIC          = f"{TOPIC_PREFIX}/bouts/cf{{}}"
 SERVICE_NAME        = f"{TOPIC_PREFIX}/GetForces"
 CF_FRAME            = "cf{}"
 WORLD_FRAME         = "world"
 
-now = time.localtime()
-# now[2] is the Day, now[1] is the Month
-now_str = f"{now[2]}_{now[1]}"
-
-def draw(fig, ax, attraction, i, node):
-    ax.clear()
-    
-    node.get_logger().info("Plot Bout Maps")
-    # Define grid dimensions for visualization (adjust as needed for performance)
-    n, m, l = 10, 6, 4  # Grid resolution in x, y, z
-    res = RESOLUTION    
-
-    # Get the 3D force matrix (shape: (3, n, m, l))
-    forces = attraction.getMatrix(n, m, l, res)
-    
-    # Create 3D meshgrid for quiver positions
-    X, Y, Z = np.meshgrid(np.linspace(0, n * res, n),
-                          np.linspace(0, m * res, m),
-                          np.linspace(0, l * res, l),
-                          indexing='ij')
-    
-    # Plot 3D quiver (vectors normalized for clarity)
-    ax.quiver(X, Y, Z, forces[0], forces[1], forces[2], length=0.1, normalize=True)
-    # Scatter the source point
-    ax.scatter(*X_SOURCE, color='red', s=30)
-    
-    # Set 3D axis labels and limits
-    ax.set_xlim(0, n * res)
-    ax.set_ylim(0, m * res)
-    ax.set_zlim(0, l * res)
-    ax.set_xlabel("x [0.1 m]")
-    ax.set_ylabel("y [0.1 m]")
-    ax.set_zlabel("z [0.1 m]")
-    ax.set_title("3D Force Field")
-    
-    # Update the canvas non-blockingly
-    fig.canvas.draw()
-    fig.canvas.flush_events()
-    
-    plt.savefig(f"log/GSL/Env/{now_str}_3D_fig{i}.pdf")
-
-def run(node, tf_buffer):
+def run(node, tf_buffer, drone_ids):
 # Logging
     # Get Wall Clock Time in seconds as a float
     system_clock = Clock(clock_type=ClockType.SYSTEM_TIME)
@@ -91,23 +51,12 @@ def run(node, tf_buffer):
     writer.writerow(["Wall Time", "Estimate_x", "Estimate_y", "Estimate_z", "Error"])
     
     # Create instances of TrafficServer to calculate Repulsive Forces from Walls and Drones.
-    traffic = TrafficServer(node, BOUNDS, D_MIN[0], D_MIN[1], 1.25, ROI[0], 4, tf_buffer)
+    traffic = TrafficServer(node, BOUNDS, D_MIN[0], D_MIN[1], 1.25, ROI[0], drone_ids, tf_buffer)
+    # Create instance of MapSnaps to generate 2D and 3D Maps
     # Create instance of BoutMap to calculate Attractive Forces towards Bouts.
-    bout = BoutMap(node, BOUNDS, RESOLUTION, ROI[1], BOUT_TOPIC, B_PARTICLE_SIZE, 1)
+    bout = BoutMap(node, BOUNDS, RESOLUTION, ROI[1], BOUT_TOPIC, B_PARTICLE_SIZE, 1, drone_ids)
     # Create instance of GetForcesServer to handle service Requests for combined(Repulsion + Attraction) Forces.
     getForcesServer = GetForcesServer(node, SERVICE_NAME, traffic, bout, tf_buffer)
-
-    # Visualization
-    plt.ion()
-    fig_bout, axs_bout = plt.subplots(1, 3, figsize=(15, 5))
-    axs_bout[2] = fig_bout.add_subplot(133, projection='3d')  # Make third subplot 3D
-    
-    # Separate visualization setup for the main 3D force field (as in original draw)
-    fig_main = plt.figure()
-    ax_main = fig_main.add_subplot(111, projection='3d')
-    ax_main.set_title("3D Force Field")
-    
-    counter = [0]	 # Initialize counter for visualization updates
 
     def timer_callback():
         bout.update()
@@ -116,21 +65,8 @@ def run(node, tf_buffer):
         # Get Wall Clock Time in seconds as a float
         current_time = system_clock.now().nanoseconds / 1e9
         writer.writerow([current_time, *bout.sourceEstimate, bout.sourceEstimateError])
-        
-        # Visualization logic
-        counter[0] += 1
-        if counter[0] >= 10:
-            # Call BoutMap's plot for detailed subplots
-            bout.plot(axs_bout)
-            fig_bout.canvas.draw()
-            fig_bout.canvas.flush_events()
-
-            # Call original draw for main 3D force field (using bout as attraction)
-            draw(fig_main, ax_main, bout, counter, node)
-
-            counter[0] = 0
 	
-    # Create a timer for periodic updates
+    # Create a Timer for periodic updates (every 1/UPDATE_RATE seconds)
     timer_period = 1.0 / UPDATE_RATE 
     timer = node.create_timer(timer_period, timer_callback)
 
@@ -176,7 +112,10 @@ class GetForcesServer:
         return response
 
 class TrafficServer:
-    def __init__(self, node, bounds, wall_dmin, traffic_dmin, wall_dmax, traffic_dmax, traffic_n, tf_buffer):
+    """
+    Calculates Repulsive Forces from Wall Boundaries and other Agents[Drones] in the environment.
+    """
+    def __init__(self, node, bounds, wall_dmin, traffic_dmin, wall_dmax, traffic_dmax, traffic_ids, tf_buffer):
         self.node = node
         # Size of the Room 
         self.bounds = bounds
@@ -188,8 +127,8 @@ class TrafficServer:
         self.traffic_dmin = traffic_dmin
         # Maximum Distance to apply Repulsive Force from other Drones. Beyond this, no force is applied.
         self.traffic_dmax = traffic_dmax
-        # Number of Drones in the environment to consider for Repulsive Forces.
-        self.traffic_n = traffic_n
+        # List of Drone IDs in the environment to consider for Repulsive Forces.
+        self.traffic_ids = traffic_ids
         # TF Buffer for looking up Drone positions.
         self.tf = tf_buffer
         
@@ -200,17 +139,16 @@ class TrafficServer:
         self.wall_k = 1 * wall_dmin**2 / (1/wall_dmin - 1/wall_dmax) 
 
     # A. This calculates Repulsive Forces for the requesting Agent[Drone] from Drones.
-    def getTrafficForce(self, position, ego_id=-1):
+    def getTrafficForce(self, ego_position, ego_id=-1):
         force = np.zeros(3)
         # Small threshold to avoid division by zero
         epsilon = 1e-6
         # If ego_id is -1, skip calculating traffic forces
-        if position is None or ego_id == -1:
+        if ego_position is None or ego_id == -1:
             return force
 
-        # Loop through all other Agent[Drones], 1 to 4
-        for i in range(self.traffic_n):
-            id = i + 1
+        # Loop through all other Agent[Drones]
+        for id in self.traffic_ids:
             
             # Skip comparing the requesting Agent[Drone] with itself
             if id == ego_id:
@@ -220,12 +158,12 @@ class TrafficServer:
                 # Look up the position of the other Agent[Drone] using TF.
                 tf = self.tf.lookup_transform(WORLD_FRAME, CF_FRAME.format(id), RclpyTime())
                 # Extract the translation components to get the position of the other Agent[Drone].
-                trans = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
+                other_position = np.array([tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z])
             except Exception:
                 continue   
         
             # Calculate the Direction vector from the requesting Agent[Drone] to the other Agent[Drone]
-            vector = trans - position
+            vector = other_position - ego_position
             # Calculate the Magnitude between the requesting Agent[Drone] and the other Agent[Drone]
             distance = np.linalg.norm(vector)
             
@@ -238,9 +176,9 @@ class TrafficServer:
                 
             # Push away if the other Agent[Drone] is less than the traffic_dmax(1.25m) from the requesting Agent[Drone].
             if u_distance < self.traffic_dmax:
-                force_magnitude = (-0.5*(self.traffic_k*(1/u_distance - 1/self.traffic_dmax)/(u_distance**2))       # exponential term
+                force_magnitude = (-0.5*(self.traffic_k*(1/u_distance - 1/self.traffic_dmax)/(u_distance**2))        # exponential term
                                     -0.5*(1-(u_distance-self.traffic_dmin)/(self.traffic_dmax-self.traffic_dmin)))   # linear term
-                force += (trans / distance) * force_magnitude
+                force += (vector / distance) * force_magnitude
     
         #buffer = force.copy()
         #force[0] += buffer[1] + buffer[2]   # Fx += Fy + Fz
@@ -248,7 +186,7 @@ class TrafficServer:
         #force[2] += buffer[0] - buffer[1]   # Fz += Fx - Fy
     
         return force
-    
+
     # B. This calculates Repulsive Forces for the requesting Agent[Drone] from Walls.
     def getWallForce(self, position):
         force = np.zeros(3)
@@ -303,67 +241,8 @@ class TrafficServer:
         return force
 
     def getForce(self, position, ego_id=-1):
-        """Returns combined wall and traffic force."""
+        """Returns the combined Forces [Repulsion from Walls + Repulsion from Drones] for a given Position and Agent[Drone] ID."""
         return self.getWallForce(position) + self.getTrafficForce(position, ego_id)
-
-    def getMatrix(self, n, m, l, resolution):
-        """
-        Generate a 3D matrix of force vectors sampled across a voxel grid.
-        Args:
-            n (int): number of grid cells in X
-            m (int): number of grid cells in Y
-            l (int): number of grid cells in Z
-            resolution (float): size of each voxel
-        
-        Returns:
-            np.ndarray: a 4D array of shape (3, n, m, l) where each [i,j,k] stores a 3D force vector.
-        """
-        grid = np.mgrid[0:n, 0:m, 0:l] * resolution + resolution / 2
-        matrix = np.zeros((3, n, m, l))
-        
-        for i in range(n):
-            for j in range(m):
-                for k in range(l):
-                    pos = np.array([grid[0, i, j, k], grid[1, i, j, k], grid[2, i, j, k]])
-                    force_vec = self.getForce(pos)
-                    matrix[:, i, j, k] = force_vec
-        
-        return matrix
-
-    def plot(self, axs, n, m, l, resolution):
-        """
-        Renders a 3D slice visualization of the traffic forces.
-        """
-    # 1. Prepare Data
-        matrix = self.getMatrix(n, m, l, resolution)
-        mid_z = l // 2
-        
-        X, Y = np.meshgrid(
-            np.linspace(0, n * resolution, n), 
-            np.linspace(0, m * resolution, m)
-        )
-        Z = np.full_like(X, mid_z * resolution)
-
-    # 2. Prepare Axis
-        axs.cla() 
-        
-    # 3. Plot Elements
-        axs.quiver(
-            X, Y, Z,
-            matrix[0, :, :, mid_z],
-            matrix[1, :, :, mid_z],
-            matrix[2, :, :, mid_z],
-            length=0.1, normalize=True
-        )
-
-    # 4. Format Axes
-        axs.set_xlim(0, n * resolution)
-        axs.set_ylim(0, m * resolution)
-        axs.set_zlim((mid_z - 1) * resolution, (mid_z + 1) * resolution)
-        axs.set_xlabel('X (m)')
-        axs.set_ylabel('Y (m)')
-        axs.set_zlabel('Z (m)')
-        axs.set_title('Traffic Force Field (Middle Z Slice, 3D)')
 
 class MapServer:
     """
@@ -395,7 +274,6 @@ class MapServer:
 
         # Processing layers
         self.diffused = np.zeros_like(self.base)
-        self.diffuse()
 
         self.gradients = np.array([np.zeros_like(self.base), np.zeros_like(self.base)])
         self.differentiate()
@@ -480,26 +358,31 @@ class BoutMap (MapServer):
     Subclass of MapServer specifically tailored to handle attractive goals or 'bouts'.
     Subscribes to point messages to update internal maps dynamically.
     """
-    def __init__(self, node, bounds, resolution, roi, topic, particle_size, particle_value=1):
+    def __init__(self, node, bounds, resolution, roi, topic, particle_size, particle_value, drone_ids):
         super().__init__(bounds, resolution, roi)
         self.node = node
-        # This Subscribes to 'GSL/bouts' when APF_1_1_agent.py Publishes a Bout Point, handleInput drops a new Attractive Force Particle onto the 3D grid
-        self.subscriber = node.create_subscription(Point, topic, self.handleInput, 10)
-        
         self.particle_size = particle_size
         self.particle_value = particle_value
+        
+        # This Subscribes to 'GSL/bouts/cf' when APF_Field_1_agent.py Publishes a Bout Point, handleInput drops a new Attractive Force Particle onto the 3D grid
+        self.subscribers = []
+        for i in drone_ids:
+            topic = BOUT_TOPIC.format(i)
+            sub = node.create_subscription(Point, topic, self.handleInput, 10)
+            self.subscribers.append(sub)
 
         self.sourceEstimate = np.array([99.0, 99.0, 99.0])
         self.sourceEstimateError = 99.0
 
     def handleInput(self, msg):
         """Callback to add new sources (bouts) based on incoming messages."""
-        self.addParticle([msg.x, msg.y, msg.z], self.particle_size, self.particle_value)
-        self.base = ndimage.gaussian_filter(self.base, sigma=self.sigma, mode="constant", cval=0)
+        pos = np.array([msg.x, msg.y, msg.z])
+        self.addParticle(pos, self.particle_size, self.particle_value)
+        
+
     
     def update(self):
         """Processes the physics layers frame-by-frame."""
-        self.diffuse()
         self.updateSourceEstimate()
         self.differentiate()
         self.vortexize(1)
@@ -511,82 +394,22 @@ class BoutMap (MapServer):
         self.node.get_logger().info("2")
         self.sourceEstimateError = np.linalg.norm(X_SOURCE-self.sourceEstimate)
         self.node.get_logger().info("3")
-
-    def getMatrix(self, n, m, l, resolution):
-        """Fetches the 3D grid representation of the force field."""
-        grid = np.mgrid[0:n, 0:m, 0:l] * resolution + resolution / 2.0
-        matrix = np.zeros((3, n, m, l))
-        
-        for i in range(n):
-            for j in range(m):
-                for k in range(l):
-                    pos = np.array([grid[0, i, j, k], grid[1, i, j, k], grid[2, i, j, k]])
-                    force_vec = self.getForce(pos)
-                    matrix[:, i, j, k] = force_vec
-        return matrix
-        
-    def plot(self, axs):
-        """
-        Renders detailed diagnostic views of the BoutMap across 3 subplots.
-        axs[0]: Base map
-        axs[1]: Diffused map
-        axs[2]: 3D Force Field
-        """
-        # Middle Z plane for 2D visualizations
-        mid_z = self.l // 2
-        
-    # 1. Raw Concentration (Base Map)
-        self.node.get_logger().info("Base")
-        axs[0].cla()
-
-        # Plot and label
-        axs[0].matshow(self.base[:, :, mid_z].T, origin='lower')
-        peak_base = np.unravel_index(np.argmax(self.base[:, :, mid_z]), self.base[:, :, mid_z].shape)
-        axs[0].scatter(*peak_base, c="lime")
-        axs[0].set_title("Base Map (mid-Z)")
-
-    # 2. Diffused Concentration
-        self.node.get_logger().info("Potential")
-        axs[1].cla()
-
-        # Plot and label
-        axs[1].matshow(self.diffused[:, :, mid_z].T, origin='lower')
-        peak = np.unravel_index(np.argmax(self.diffused[:, :, mid_z]), self.diffused[:, :, mid_z].shape)
-        
-        if self.sourceEstimateError != 99.0:
-            axs[1].scatter(*peak, c="lime")
-        axs[1].set_title("Bout Potential Field")
-        
-    # 3. 3D Force Field
-        self.node.get_logger().info("Quiver")
-        axs[2].cla()
-
-        # Setup Grid
-        X, Y = np.meshgrid(np.arange(self.n), np.arange(self.m))
-        Z = np.full_like(X, mid_z)
-        
-        if self.sourceEstimateError != 99.0:
-            # Quiver with all three components (U=X, V=Y, W=Z forces)
-            axs[2].quiver(X, Y, Z,
-                        self.forces[0, :, :, mid_z].T,
-                        self.forces[1, :, :, mid_z].T,
-                        self.forces[2, :, :, mid_z].T,
-                        length=0.1, normalize=True)  # Normalize for clarity
-            
-            # Set limits and labels
-            axs[2].set_xlim(0, self.n)
-            axs[2].set_ylim(0, self.m)
-            axs[2].set_zlim(mid_z - 1, mid_z + 1)  # Tight Z-range
-            axs[2].set_xlabel('X')
-            axs[2].set_ylabel('Y')
-            axs[2].set_zlabel('Z')
-            axs[2].set_title("Bout Force Field (mid-Z, 3D)")
-        
-        self.node.get_logger().info("Done Plotting")
         
 def main(args=None):
     rclpy.init(args=args)
     node = Node("GSL_MapServer")
+
+    # Extract No. of Drones from Launch file
+    node.declare_parameter('drone_ids', [1, 2, 3, 4])
+    drone_ids_param = node.get_parameter('drone_ids').value
+    if isinstance(drone_ids_param, str):
+        try:
+            drone_ids = ast.literal_eval(drone_ids_param)
+        except Exception as e:
+            node.get_logger().error(f"Failed to parse drone_ids string: {e}")
+            drone_ids = [1, 2, 3, 4]
+    else:
+        drone_ids = drone_ids_param
 
     # Debug environment info
     node.get_logger().info(f"PYTHONPATH: {os.environ.get('PYTHONPATH')}")
@@ -595,9 +418,9 @@ def main(args=None):
     # Initialize TF Listeners
     tf_buffer = Buffer()
     tf_listener = TransformListener(tf_buffer, node)
-    
+
     try:
-        run(node, tf_buffer)
+        run(node, tf_buffer, drone_ids)
     finally:
         node.destroy_node()
         rclpy.shutdown()
