@@ -1,19 +1,31 @@
 robots:
+  cf5:
+    id: 5
+    enabled: false
+    uri: radio://0/80/2M/E7E7E7E705
+    type: default
+    initial_position: [3.5, 0.5, 0.0]
+    
   cf6:
-    cf_name: cf6
-    id: 15
+    id: 6
     enabled: true
     uri: radio://0/80/2M/E7E7E7E706
     type: default
-    initial_position: [0.5, 0.5, 0.0]
+    initial_position: [3.5, 3.0, 0.0]
+
+  cf7:
+    id: 7
+    enabled: false
+    uri: radio://0/80/2M/E7E7E7E707
+    type: default
+    initial_position: [3.5, 5.5, 0.0]
     
   cf8:
-    cf_name: cf8
-    id: 6
+    id: 8
     enabled: true
     uri: radio://0/80/2M/E7E7E7E708
     type: default
-    initial_position: [0.5, 3.0, 0.0]
+    initial_position: [5.5, 0.5, 0.0]
         
 robot_types:
   default:
