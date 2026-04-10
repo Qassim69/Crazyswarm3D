@@ -1,25 +1,28 @@
 #!/usr/bin/env python3
 
-import numpy as np
-import rclpy
-import csv
+# Standard Library
 import ast
-import time
-# ROS2 Imports
+import csv
+
+# Third-Party
+import numpy as np
+
+# ROS2 Core
+import rclpy
 from rclpy.duration import Duration
-from rclpy.node import Node
-from rclpy.clock import Clock, ClockType
 from tf2_ros import Buffer, TransformListener
-# ROS2 Messages
+from rclpy.clock import Clock, ClockType
+
+# ROS2 Message & Service
 from std_msgs.msg import ColorRGBA
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point
-# ROS2 custom Messages and Services
-from crazyflie_interfaces.msg import LogDataGeneric
-from gaden_simulation_interfaces.srv import GetForces
-# ROS2 crazyflies_server Parameter Services
 from rcl_interfaces.srv import ListParameters, DescribeParameters
 from rcl_interfaces.msg import ParameterType
+from crazyflie_interfaces.msg import LogDataGeneric
+
+from geometry_msgs.msg import Point
+from gaden_simulation_interfaces.srv import GetForces
+
 # Crazyflie Python API
 from crazyflie_py.crazyflie import Crazyflie
 
@@ -42,20 +45,17 @@ BOUT_THRESHOLD      =   25     # bout amplitude threshold for noise reduction
 TAU                 =   0.25   # halflife for emwa smoothing of x and its derivatives [s]
 
 PREFIX              = "GSL"
-BOUT_TOPIC          = f"{PREFIX}/bouts"
+BOUT_TOPIC          = f"{PREFIX}/bouts/cf{{}}"
 GETFORCES_SERVICE   = f"{PREFIX}/GetForces"
 CF                  = "/cf{}"
 SENSOR_TOPIC        = "/cf{}/sgp30"	    # 2 values: [1L, 1R] & [2L, 2R]
 
-# Helper function to check battery level and land if critical.
-def batteryCheck(msg, cf, node=None):
-    if msg.values[0] == 3:
-        cf.land(targetHeight=0.02, duration=2)
-        time.sleep(2)
-        if node:
-            node.get_logger().info("Battery critical. Shutting down.")
-        return True
-    return False
+def batteryCheck(msg, cf, node, battery_low_state):
+    # pm.state: 0=on battery, 1=charging, 2=charged, 3=low power, 4=shutdown
+    if msg.values[0] == 3 and not battery_low_state[0]:
+        battery_low_state[0] = True
+        node.get_logger().fatal("Battery critical. Landing...")
+        cf.land(targetHeight=0.02, duration=3.0)
         
 """BOUT DETECTION LOGIC"""
 class EmwaData:
@@ -494,12 +494,15 @@ def run(node, cf, cfid):
     node.get_logger().info(f'Logging bout data to: {boutFile}')
 
 # 1. Create the Subscriber FIRST
+    # Flag to check Battery Condition
+    battery_low = [False]
     # This Subscribes to the Battery Readings on the /cf{cfid}/battery Topic and uses the batteryCheck() Function to process the incoming data.
-    node.create_subscription(LogDataGeneric, "/cf{}/battery".format(cfid), lambda msg: batteryCheck(msg, cf), 10)
+    node.create_subscription(LogDataGeneric, "/cf{}/battery".format(cfid), lambda msg: batteryCheck(msg, cf, node, battery_low), 10)
     
 # 2. Create the Publisher SECOND
-    # This only Publishes the Detected Bout Point on the GSL/bouts Topic.
-    bout_pub = node.create_publisher(Point, BOUT_TOPIC, 10)
+    # This only Publishes the Detected Bout Point on the GSL/bouts/cf{cfid} Topic.
+    bout_topic = BOUT_TOPIC.format(cfid)
+    bout_pub = node.create_publisher(Point, bout_topic, 10)
 # 3. Initialize the BoutDetector Object THIRD
     # This initializes the BoutDetector Object, which applies the Bout Detection Logic for Sensor Readings from Left and Right IR Sensors and uses bout_pub to Publish the Detected Bout Point.
     bout_detector = [BoutDetector(node, TAU, SENSOR_RATE, BOUT_THRESHOLD, False, bout_pub, cf, boutLoggerL),
@@ -520,7 +523,7 @@ def run(node, cf, cfid):
         rclpy.spin_once(node, timeout_sec=0.0)
         z = cf.position()[2]
         
-        if z >= HEIGHT_DESIRED * 0.95:   # e.g. 0.475 m for target=0.5
+        if z >= HEIGHT_DESIRED * 0.95:   # 0.475m for HEIGHT_DESIRED=0.5
             node.get_logger().info(f"Takeoff for cf{cfid} Reached z={z:.3f}")
             break
     node.get_logger().info(f"Takeoff for cf{cfid} Completed")
@@ -528,6 +531,10 @@ def run(node, cf, cfid):
     """MAIN LOOP"""
     update_period = 1.0 / float(UPDATE_RATE)
     def update_cb():
+        # Short-circuit if battery is low to prevent velocity setpoints from overriding the land command
+        if battery_low[0]:
+            return
+
         try:
             # This initiates the update() Function to send Velocity commands
             motion_controller.update()
@@ -561,8 +568,8 @@ def fetch_param_types(node, cfname):
             return {}
         node.get_logger().info("Waiting for /crazyflie_server/list_parameters service...")
     
-    # Create a Parameter Types List 
-    FIRMWARE_PREFIX = "robot_types.default.firmware_params."
+    # Create a Parameter Types List matching crazyflie_server.cpp Drone speicific Namespace Format
+    FIRMWARE_PREFIX = f"{cfname}.params."
     paramTypeDict = {}
     try:
     # Get List of all Parameter Types
