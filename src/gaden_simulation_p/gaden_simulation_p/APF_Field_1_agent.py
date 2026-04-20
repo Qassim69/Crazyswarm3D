@@ -30,14 +30,13 @@ from crazyflie_py.crazyflie import Crazyflie
 EPSILON = np.finfo(np.float16).eps
 
 # Flight & Navigation parameters
-MAX_LIN_VELOCITY    = 0.2     	# m/s   only theoretically, if obstacle, traffic and bout forces would all align
-MAX_MODE_TIME       = 10       	# s
+MAX_LIN_VELOCITY    = 0.1     	# m/s   only theoretically, if obstacle, traffic and bout forces would all align
 HEIGHT_DESIRED      = 0.3     	# m
 UPDATE_RATE         = 5      	# Hz
 CLAMPING_THRESHOLD  = 0.675
 SWITCHING_THRESHOLD = 0.375
-SWITCHING_TIME      = 10.0
-BOUNDS 		        = [[0.04,-0.10,0],[3.04,2.90,2.0]]   	# [[min],[max]]; [m]
+SWITCHING_TIME      = 10.0      # s
+BOUNDS 		        = [[0,0,0],[2.8,2.8,2.0]]   	# [[min],[max]]; [m]
 
 # Bout detection parameters
 SENSOR_RATE         =   20     # Hz
@@ -48,7 +47,7 @@ PREFIX              = "GSL"
 BOUT_TOPIC          = f"{PREFIX}/bouts/cf{{}}"
 GETFORCES_SERVICE   = f"{PREFIX}/GetForces"
 CF                  = "/cf{}"
-SENSOR_TOPIC        = "/cf{}/sgp30"	    # 2 values: [1L, 1R] & [2L, 2R]
+SENSOR_TOPIC        = "/cf{}/sgp30"	                # 2 values: [1L, 1R] & [2L, 2R]
 
 def batteryCheck(msg, cf, node, battery_low_state):
     # pm.state: 0=on battery, 1=charging, 2=charged, 3=low power, 4=shutdown
@@ -203,7 +202,7 @@ class MotionController:
         self.setpoint = np.array([0.0, 0.0, 0.0], dtype=float)
         
         # Minimum distance (m) to keep setpoints away from walls
-        self.offset = 0.1
+        self.offset = 0.2
 
         # Generate the first Random Setpoint 
         self.generateSetpoint()
@@ -376,9 +375,18 @@ class MotionController:
 
     def generateSetpoint(self):
         """Generates a Random Setpoint within bounds and offset from walls to avoid collisions."""
-        min_bounds = np.array(self.bounds[0]) + self.offset	# [0.1, 0.1, 0.1]
-        max_bounds = np.array(self.bounds[1]) - self.offset	# [9.9, 5.9, 2.5]
-        self.setpoint = np.random.uniform(min_bounds, max_bounds)
+        min_bounds = np.array(self.bounds[0]) + self.offset	# [0.2, 0.2, 0.2]
+        max_bounds = np.array(self.bounds[1]) - self.offset	# [2.7, 2.7, 1.8]
+        
+        # Position of Gas Source to avoid [m]
+        x_source = np.array([0.13, 1.22, 0.2])
+        source_clearance = 0.5 # Minimum distance from Gas Source [m]
+        
+        # Keep randomly generating points until one is safely away from the source
+        while True:
+            self.setpoint = np.random.uniform(min_bounds, max_bounds)
+            if np.linalg.norm(self.setpoint - x_source) >= source_clearance:
+                break
 
         # Fixed Height:
         #x = np.random.uniform(min_bounds[0], max_bounds[0])
@@ -542,7 +550,6 @@ def run(node, cf, cfid):
             node.get_logger().error(f"Error in update timer: {e}")
 
     timer = node.create_timer(update_period, update_cb)
-    # Spin so /clock advances and the timer fires under use_sim_time
     try:
         rclpy.spin(node)
     finally:
