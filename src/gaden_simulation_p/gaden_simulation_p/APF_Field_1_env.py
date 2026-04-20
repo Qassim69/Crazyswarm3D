@@ -24,12 +24,12 @@ from gaden_simulation_interfaces.srv import GetForces
 from geometry_msgs.msg import Point
 
 """PARAMETERS"""
-D_MIN           = [0.05, 0.20]                          # Minimum Distance to start applying Repulsive Force [wall, traffic] [m]
+D_MIN           = [0.20, 0.20]                          # Minimum Distance to start applying Repulsive Force [wall, traffic] [m]
 ROI             = [1.25, 1.0]                           # Radius of Influence [traffic, bout] [m]
 MEASUREMENT_EPS = 0.10                                  # [m]
 B_PARTICLE_SIZE = 0.5                                   # [m]
-X_SOURCE        = np.array([0.75, 0.80, 0.75])          # Position of Gas Source [m]
-BOUNDS          = [[0.04,-0.10,0],[3.04,2.90,2.0]]      # Size of the Environment [[min],[max]]; [m]
+X_SOURCE        = np.array([0.13, 1.22, 0.2])          # Position of Gas Source [m]
+BOUNDS          = [[0,0,0],[2.8,2.8,2.0]]               # Size of the Environment [[min],[max]]; [m]
 RESOLUTION      = 0.10                                  # Size of each cell in the grid maps [m]
 UPDATE_RATE     = 10                                    # Hz
 
@@ -129,14 +129,23 @@ class TrafficServer:
         self.traffic_dmax = traffic_dmax
         # List of Drone IDs in the environment to consider for Repulsive Forces.
         self.traffic_ids = traffic_ids
+        # Gas Source Repulsion Parameters
+        self.source_radius = 0.15
+        source_distance = 0.50
+        # Results in 0.35m usable distance
+        self.source_dmax = source_distance - self.source_radius
+        # Keep the virtual bumper at 0.20m
+        self.source_dmin = self.traffic_dmin
         # TF Buffer for looking up Drone positions.
         self.tf = tf_buffer
         
         # Calculate Force Multipliers
-        # Force > 1 for d < d_min
+        # Drones: Force > 1 for d < d_min
         self.traffic_k = 1 * traffic_dmin**2 / (1/traffic_dmin - 1/traffic_dmax)
-        # Force > 1 for d < d_min
+        # Walls: Force > 1 for d < d_min
         self.wall_k = 1 * wall_dmin**2 / (1/wall_dmin - 1/wall_dmax) 
+        # Gas Source: Force > 1 for d < d_min
+        self.source_k = 1 * self.source_dmin**2 / (1/self.source_dmin - 1/self.source_dmax)
 
     # A. This calculates Repulsive Forces for the requesting Agent[Drone] from Drones.
     def getTrafficForce(self, ego_position, ego_id=-1):
@@ -239,10 +248,34 @@ class TrafficServer:
         #force[2] += buffer[0] - buffer[1]   # Fz += Fx - Fy
         
         return force
+    
+    # C. This calculates Repulsive Forces for the requesting Agent[Drone] from Gas Source
+    def getSourceForce(self, position):
+        """Calculates Repulsive Force from the stationary Gas Source."""
+        force = np.zeros(3)
+        epsilon = 1e-6
+        
+        # Calculate the Direction vector from the requesting Agent[Drone] to the Gas Source
+        vector = X_SOURCE - position
+        distance = np.linalg.norm(vector)
+        
+        # Apply the virtual bumper using the physical radius
+        u_distance = distance - self.source_radius
+        
+        if u_distance < epsilon:
+            return force
+            
+        # Push away if the Gas Source is less than the source_dmax from the Drone
+        if u_distance < self.source_dmax:
+            force_magnitude = (-0.5*(self.source_k*(1/u_distance - 1/self.source_dmax)/(u_distance**2))
+                                -0.5*(1-(u_distance-self.source_dmin)/(self.source_dmax-self.source_dmin)))
+            force += (vector / distance) * force_magnitude
+            
+        return force
 
     def getForce(self, position, ego_id=-1):
-        """Returns the combined Forces [Repulsion from Walls + Repulsion from Drones] for a given Position and Agent[Drone] ID."""
-        return self.getWallForce(position) + self.getTrafficForce(position, ego_id)
+        """Returns the combined Forces [Repulsion from Walls + Repulsion from Drones + Repulsion from Gas Source] for a given Position and Agent[Drone] ID."""
+        return self.getWallForce(position) + self.getTrafficForce(position, ego_id) + self.getSourceForce(position)
 
 class MapServer:
     """
@@ -378,9 +411,7 @@ class BoutMap (MapServer):
         """Callback to add new sources (bouts) based on incoming messages."""
         pos = np.array([msg.x, msg.y, msg.z])
         self.addParticle(pos, self.particle_size, self.particle_value)
-        
 
-    
     def update(self):
         """Processes the physics layers frame-by-frame."""
         self.updateSourceEstimate()
@@ -400,14 +431,14 @@ def main(args=None):
     node = Node("GSL_MapServer")
 
     # Extract No. of Drones from Launch file
-    node.declare_parameter('drone_ids', [1, 2, 3, 4])
+    node.declare_parameter('drone_ids', [2, 3, 4, 6, 9])
     drone_ids_param = node.get_parameter('drone_ids').value
     if isinstance(drone_ids_param, str):
         try:
             drone_ids = ast.literal_eval(drone_ids_param)
         except Exception as e:
             node.get_logger().error(f"Failed to parse drone_ids string: {e}")
-            drone_ids = [1, 2, 3, 4]
+            drone_ids = [2, 3, 4, 6, 9]
     else:
         drone_ids = drone_ids_param
 
