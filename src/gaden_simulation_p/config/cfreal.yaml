@@ -1,32 +1,39 @@
 robots:
-  cf5:
-    id: 5
+  cf2:
+    id: 2
     enabled: false
-    uri: radio://0/80/2M/E7E7E7E705
+    uri: radio://0/80/2M/E7E7E7E702
     type: default
     initial_position: [3.5, 0.5, 0.0]
+    
+  cf3:
+    id: 3
+    enabled: true
+    uri: radio://0/80/2M/E7E7E7E703
+    type: default
+    initial_position: [3.5, 3.0, 0.0]
+
+  cf4:
+    id: 4
+    enabled: true
+    uri: radio://0/80/2M/E7E7E7E704
+    type: default
+    initial_position: [3.5, 5.5, 0.0]
     
   cf6:
     id: 6
     enabled: true
     uri: radio://0/80/2M/E7E7E7E706
     type: default
-    initial_position: [3.5, 3.0, 0.0]
+    initial_position: [5.5, 0.5, 0.0]
 
-  cf7:
-    id: 7
-    enabled: false
-    uri: radio://0/80/2M/E7E7E7E707
+  cf9:
+    id: 9
+    enabled: true
+    uri: radio://0/80/2M/E7E7E7E709
     type: default
     initial_position: [3.5, 5.5, 0.0]
-    
-  cf8:
-    id: 8
-    enabled: true
-    uri: radio://0/80/2M/E7E7E7E708
-    type: default
-    initial_position: [5.5, 0.5, 0.0]
-        
+
 robot_types:
   default:
     connection: "crazyflie"
@@ -63,10 +70,10 @@ robot_types:
           frequency: 1 # Hz
       custom_topics:
         sgp30:
-          frequency: 500 # Hz
+          frequency: 20 # Hz
           vars: ['sgp30.value2L', 'sgp30.value2R']
         battery:
-          frequency: 1000 # Hz
+          frequency: 1 # Hz
           vars: ['pm.state']
 
 # These Marker Configurations are for the real Crazyflies who use Motion Capture System[Vicon or OptiTrack]
