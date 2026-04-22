@@ -144,7 +144,7 @@ class BoutDetector:
             if self.system_clock.now() > self.startTime:
                 self.publisher.publish(self.candidatePoint)
                 wall_time = self.system_clock.now().nanoseconds * 1e-9
-                self.logger.writerow('a', [wall_time, self.candidatePoint.x, self.candidatePoint.y, self.candidatePoint.z])
+                self.logger.writerow('a', [wall_time, self.candidatePoint.x, self.candidatePoint.y, self.candidatePoint.z, self.x_d0.value])
 
         # Candidates are discarded if negative zero-crossing occurs
         if self.x_d2.negativeZeroCrossing():
@@ -493,10 +493,10 @@ def run(node, cf, cfid):
 
     # Logs Bout Reading for Left IR Sensors of a Drone cf{cfid}
     boutLoggerL = Logger(boutFile.format("L2"))
-    boutLoggerL.writerow("w+", ["Wall Time", "x(metres)", "y(metres)", "z(metres)"])
+    boutLoggerL.writerow("w+", ["Wall Time", "x(metres)", "y(metres)", "z(metres)", "Gas Conc."])
     # Logs Bout Reading for Right IR Sensors of a Drone cf{cfid}
     boutLoggerR = Logger(boutFile.format("R2"))
-    boutLoggerR.writerow("w+", ["Wall Time", "x(metres)", "y(metres)", "z(metres)"])
+    boutLoggerR.writerow("w+", ["Wall Time", "x(metres)", "y(metres)", "z(metres)", "Gas Conc."])
 
     node.get_logger().info(f'Logging sensor data to: {sensorFile}')
     node.get_logger().info(f'Logging bout data to: {boutFile}')
