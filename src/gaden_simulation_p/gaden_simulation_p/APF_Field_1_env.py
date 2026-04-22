@@ -52,7 +52,6 @@ def run(node, tf_buffer, drone_ids):
     
     # Create instances of TrafficServer to calculate Repulsive Forces from Walls and Drones.
     traffic = TrafficServer(node, BOUNDS, D_MIN[0], D_MIN[1], 1.25, ROI[0], drone_ids, tf_buffer)
-    # Create instance of MapSnaps to generate 2D and 3D Maps
     # Create instance of BoutMap to calculate Attractive Forces towards Bouts.
     bout = BoutMap(node, BOUNDS, RESOLUTION, ROI[1], BOUT_TOPIC, B_PARTICLE_SIZE, 1, drone_ids)
     # Create instance of GetForcesServer to handle service Requests for combined(Repulsion + Attraction) Forces.
@@ -414,17 +413,15 @@ class BoutMap (MapServer):
 
     def update(self):
         """Processes the physics layers frame-by-frame."""
+        self.diffuse()
         self.updateSourceEstimate()
         self.differentiate()
         self.vortexize(1)
         self.normalize()
 
     def updateSourceEstimate(self):
-        self.node.get_logger().info("1")
         self.sourceEstimate = np.array(np.unravel_index(self.diffused.argmax(), self.diffused.shape))*self.resolution + self.resolution*0.5
-        self.node.get_logger().info("2")
         self.sourceEstimateError = np.linalg.norm(X_SOURCE-self.sourceEstimate)
-        self.node.get_logger().info("3")
         
 def main(args=None):
     rclpy.init(args=args)
