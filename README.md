@@ -145,12 +145,12 @@ This configuration runs high-level decentralized search logic on actual **physic
 
 | File | Description |
 |---|---|
-| 🚀 **Launch File** | `src/gaden_simulation_p/launch/APF_Field_1.py` & `APF_Field_1_hover_swarm.py` — Coordinates startup of the map transform, physical servers, and agent scripts |
-| ⚙️ **Swarm Config** | `src/gaden_simulation_p/config/cfreal.yaml` — Drone IDs, radio URIs, start coordinates, marker structures, and firmware parameters |
-| 🧠 **Agent Logic** | `src/gaden_simulation_p/gaden_simulation_p/APF_Field_1_agent.py` — Decentralized controller with EWMA filtering and bout detection |
-| 🌐 **Physics Server** | `src/gaden_simulation_p/gaden_simulation_p/APF_Field_1_env.py` — Computes and broadcasts inter-drone and boundary repulsion forces |
-| 🐍 **CF Python Wrapper** | `src/crazyswarm2/crazyflie_py/crazyflie_py/crazyflie.py` — High-level API for takeoff, hover, land, etc. |
-| 🔌 **C++ Driver Server** | `src/crazyswarm2/crazyflie/src/crazyflie_server.cpp` — Bridge translating ROS 2 topics to radio link packets via Crazyradio PA |
+| **Launch File** | `src/gaden_simulation_p/launch/APF_Field_1.py` & `APF_Field_1_hover_swarm.py` — Coordinates startup of the map transform, physical servers, and agent scripts |
+| **Swarm Config** | `src/gaden_simulation_p/config/cfreal.yaml` — Drone IDs, radio URIs, start coordinates, marker structures, and firmware parameters |
+| **Agent Logic** | `src/gaden_simulation_p/gaden_simulation_p/APF_Field_1_agent.py` — Decentralized controller with EWMA filtering and bout detection |
+| **Physics Server** | `src/gaden_simulation_p/gaden_simulation_p/APF_Field_1_env.py` — Computes and broadcasts inter-drone and boundary repulsion forces |
+| **CF Python Wrapper** | `src/crazyswarm2/crazyflie_py/crazyflie_py/crazyflie.py` — High-level API for takeoff, hover, land, etc. |
+| **C++ Driver Server** | `src/crazyswarm2/crazyflie/src/crazyflie_server.cpp` — Bridge translating ROS 2 topics to radio link packets via Crazyradio PA |
 
 ### ▶️ Execution
 
@@ -168,18 +168,18 @@ For safety and debugging, this environment uses **high-fidelity Software-in-Loop
 
 | File | Description |
 |---|---|
-| 🚀 **Launch File** | `src/gaden_simulation_p/launch/APF_1_1.py` & `GSL_hover_swarm.py` — Launches environment maps, gas plumes, simulated sensor nodes, and agent nodes |
-| ⚙️ **Swarm Config** | `src/gaden_simulation_p/config/cfrobot.yaml` — Simulated drone IDs, initial positions, and firmware controllers |
-| 🧠 **Agent Logic** | `src/gaden_simulation_p/gaden_simulation_p/APF_1_1_agent.py` — Decentralized controller with EWMA filtering and bout detection |
-| 🌐 **Physics Server** | `src/gaden_simulation_p/gaden_simulation_p/APF_1_1_env.py` — Computes and broadcasts inter-drone and boundary repulsion forces |
-| 🐍 **CF Python Wrapper** | `src/crazyswarm2/crazyflie_py/crazyflie_py/crazyflie.py` — High-level API for takeoff, hover, land, etc. |
-| 🔄 **Simulation Coordinator** | `src/crazyswarm2/crazyflie_sim/crazyflie_sim/crazyflie_server.py` — Mimics real drone publisher/subscriber APIs |
-| 💻 **SIL Model** | `src/crazyswarm2/crazyflie_sim/crazyflie_sim/crazyflie_sil.py` — Simulates STM32 onboard firmware state estimation and controllers |
-| ⚡ **Physics Engine** | `src/crazyswarm2/crazyflie_sim/crazyflie_sim/backend/np.py` — NumPy-based multi-body physics equations for simulated flight |
-| 📊 **RViz Visualization** | `src/crazyswarm2/crazyflie_sim/crazyflie_sim/visualization/rviz.py` — Transforms state logs into 3D RViz markers |
-| 🔁 **PID Outer Loop** | `src/crazyflie-firmware/src/modules/src/controller/controller_pid.c` — Low-level C PID velocity and attitude-rate loop |
-| 📍 **Position Controller** | `src/crazyflie-firmware/src/modules/src/controller/position_controller_pid.c` — Translates desired coordinates into target velocities |
-| 🎯 **Attitude Controller** | `src/crazyflie-firmware/src/modules/src/controller/attitude_pid_controller.c` — Computes motor PWM from attitude targets |
+| **Launch File** | `src/gaden_simulation_p/launch/APF_1_1.py` & `GSL_hover_swarm.py` — Launches environment maps, gas plumes, simulated sensor nodes, and agent nodes |
+| **Swarm Config** | `src/gaden_simulation_p/config/cfrobot.yaml` — Simulated drone IDs, initial positions, and firmware controllers |
+| **Agent Logic** | `src/gaden_simulation_p/gaden_simulation_p/APF_1_1_agent.py` — Decentralized controller with EWMA filtering and bout detection |
+| **Physics Server** | `src/gaden_simulation_p/gaden_simulation_p/APF_1_1_env.py` — Computes and broadcasts inter-drone and boundary repulsion forces |
+| **CF Python Wrapper** | `src/crazyswarm2/crazyflie_py/crazyflie_py/crazyflie.py` — High-level API for takeoff, hover, land, etc. |
+| **Simulation Coordinator** | `src/crazyswarm2/crazyflie_sim/crazyflie_sim/crazyflie_server.py` — Mimics real drone publisher/subscriber APIs |
+| **SIL Model** | `src/crazyswarm2/crazyflie_sim/crazyflie_sim/crazyflie_sil.py` — Simulates STM32 onboard firmware state estimation and controllers |
+| **Physics Engine** | `src/crazyswarm2/crazyflie_sim/crazyflie_sim/backend/np.py` — NumPy-based multi-body physics equations for simulated flight |
+| **RViz Visualization** | `src/crazyswarm2/crazyflie_sim/crazyflie_sim/visualization/rviz.py` — Transforms state logs into 3D RViz markers |
+| **PID Outer Loop** | `src/crazyflie-firmware/src/modules/src/controller/controller_pid.c` — Low-level C PID velocity and attitude-rate loop |
+| **Position Controller** | `src/crazyflie-firmware/src/modules/src/controller/position_controller_pid.c` — Translates desired coordinates into target velocities |
+| **Attitude Controller** | `src/crazyflie-firmware/src/modules/src/controller/attitude_pid_controller.c` — Computes motor PWM from attitude targets |
 
 ### ▶️ Execution
 
@@ -195,9 +195,3 @@ ros2 launch gaden_simulation_p APF_1_1.py
 |---|---|
 | 👤 **Maintainer** | Mr. Qassim Gazi |
 | 📬 **Email** | [qassimgazi06@gmail.com](mailto:qassimgazi06@gmail.com) |
-
----
-
-<p align="center">
-  Made with ❤️ — Swarm Robotics & Gas Source Localization Research
-</p>
