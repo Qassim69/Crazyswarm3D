@@ -55,15 +55,6 @@ The following software packages must be installed and configured to support simu
 ## 🏗️ Workspace Architecture
 
 The workspace is organized into four major functional pillars:
-
-```
-workspace/
-├── 🤖 src/crazyswarm2/          # Flight control, swarm capabilities & TF tracking
-├── 💨 src/gaden/                # Gas plume/filament modelling & sensor simulation
-├── 🧠 src/gaden_simulation_p/   # APF navigation intelligence, params & launch files
-└── ⚙️  src/crazyflie-firmware/  # Onboard PID/Mellinger controllers & Kalman estimators
-```
-
 | Module | Responsibility |
 |---|---|
 | `src/crazyswarm2` | Flight control, swarm capabilities, TF tracking for Crazyflie drones |
